@@ -21,8 +21,8 @@ This repository contains a collection of essential automation scripts written in
 
 1. Clone the repository:
     ```bash
-    git clone https://github.com/Rajchal/small-automation-bash-python.git
-    cd small-automation-bash-python
+    git clone https://github.com/Rajchal/automation-scripts.git
+    cd automation-scripts
     ```
 
 2. Run the scripts:
