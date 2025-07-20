@@ -41,5 +41,4 @@ Contributions are welcome! Feel free to submit issues or pull requests to improv
 
 ## Disclaimer
 
-Use these scripts at your own risk. Test thoroughly before deploying in production environments.
-
+Use these scripts at your own risk. Test thoroughly before deploying in production environments. Please contact me if there is any issue.
