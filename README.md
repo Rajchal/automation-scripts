@@ -17,6 +17,76 @@ This repository contains a collection of essential automation scripts written in
 4. **Backup and Recovery**: Automate backup creation and restoration.
 5. **Miscellaneous Utilities**: Handy scripts for everyday DevOps tasks.
 
+### Recently Added (Highlights)
+
+Python automation additions focused on Kubernetes, AWS, Docker, Git, and security hygiene:
+
+| Script | Purpose |
+|--------|---------|
+| `k8s-unused-configmap-secret-auditor.py` | Lists ConfigMaps/Secrets not referenced by any Pod. |
+| `k8s-stuck-finalizer-cleaner.py` | Detects terminating resources stuck on finalizers (read‑only suggestions). |
+| `k8s-node-cordon-drift-detector.py` | Flags nodes cordoned too long without reason annotation. |
+| `aws-ebs-low-iops-detector.py` | Heuristic saturation / low baseline check for EBS volumes. |
+| `k8s-unused-ingress-detector.py` | Ingress objects with no live service backends. |
+| `docker-build-cache-pruner.py` | Dry‑run & prune Docker/buildx build cache by age. |
+| `systemd-service-start-latency-profiler.py` | Journal-based service startup latency stats. |
+| `tls-cipher-suite-auditor.py` | Openssl-based cipher/protocol & weak suite scan. |
+| `k8s-image-registry-compliance.py` | Enforces allowed image registry prefixes / digest policy. |
+| `git-large-file-new-commit-blocker.py` | Blocks new large blobs in commit range (CI friendly). |
+| `aws-security-group-unused-ingress-auditor.py` | Finds unattached / inert security groups & rules. |
+| `k8s-pdb-gap-detector.py` | Workloads missing or with ineffective PodDisruptionBudgets. |
+| `docker-layer-size-analyzer.py` | Shows per-layer sizes; flags oversized layers. |
+| `expired-acm-cert-detector.py` | Multi-region ACM certificate expiry reporting. |
+
+### Quick Usage Examples
+
+```bash
+# Kubernetes audits
+python3 python/k8s-unused-configmap-secret-auditor.py
+python3 python/k8s-pdb-gap-detector.py --json
+
+# AWS checks
+python3 python/aws-ebs-low-iops-detector.py --region us-east-1
+python3 python/expired-acm-cert-detector.py --regions us-east-1,us-west-2 --days 20
+
+# Docker hygiene
+python3 python/docker-build-cache-pruner.py --older-than 12h --apply
+python3 python/docker-layer-size-analyzer.py --image alpine:3.19
+
+# Git large file guard (fail if >5MB new blobs)
+python3 python/git-large-file-new-commit-blocker.py --threshold-mb 5
+
+# TLS cipher scan
+python3 python/tls-cipher-suite-auditor.py --targets example.com:443 --full --json
+```
+
+### Python Dependencies (on-demand)
+
+Install only what you use:
+
+```bash
+pip install kubernetes boto3 botocore
+```
+
+Some scripts rely on system tools:
+- `openssl` (cipher auditor)
+- `docker` CLI + buildx plugin (cache pruner, layer analyzer)
+- `journalctl` / systemd (latency profiler)
+
+### CI Integration Hints
+
+- Fail pipeline on drift / violations:
+    - `git-large-file-new-commit-blocker.py` (exit 2 if large files)
+    - `docker-layer-size-analyzer.py` (exit 2 if oversized layers)
+    - `k8s-image-registry-compliance.py` (non-zero on API error only; wrap with grep if needed)
+
+### Safe Use Notes
+
+- Auditors are read-only; any printed `kubectl` / `aws` delete commands are suggestions—review manually.
+- For cluster scripts, ensure `KUBECONFIG` or in-cluster service account perms are appropriate (list/read only).
+
+---
+
 ## Getting Started
 
 1. Clone the repository:
