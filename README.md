@@ -37,6 +37,7 @@ Python automation additions focused on Kubernetes, AWS, Docker, Git, and securit
 | `k8s-pdb-gap-detector.py` | Workloads missing or with ineffective PodDisruptionBudgets. |
 | `docker-layer-size-analyzer.py` | Shows per-layer sizes; flags oversized layers. |
 | `expired-acm-cert-detector.py` | Multi-region ACM certificate expiry reporting. |
+| `aws-eni-unattached-auditor.py` | Finds unattached ENIs (status=available); optional deletion with caps. |
 
 ### Quick Usage Examples
 
@@ -62,10 +63,16 @@ python3 python/tls-cipher-suite-auditor.py --targets example.com:443 --full --js
 
 ### Python Dependencies (on-demand)
 
-Install only what you use:
+Install dependencies via requirements file (recommended):
 
 ```bash
-pip install kubernetes boto3 botocore
+pip install -r requirements.txt
+```
+
+Or install ad-hoc for specific scripts:
+
+```bash
+pip install kubernetes boto3
 ```
 
 Some scripts rely on system tools:

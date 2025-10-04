@@ -92,11 +92,9 @@ def tags_dict(tags_list: List[Dict[str, str]]):
 def matches_required(eni: Dict[str, Any], needed: Dict[str, str]) -> bool:
     if not needed:
         return True
-    t = tags_dict(eni.get('TagSet', [])) if 'TagSet' in eni else tags_dict(eni.get('TagSet', []))
-    # Some SDKs include 'TagSet', others include 'TagSet' or 'TagSet' missing: also check 'TagSet' fallback via 'TagSet' key only
-    if not t and eni.get('TagSet') is None and eni.get('TagSet') is None:
-        # try 'TagSet' alternative fields (older shapes): 'TagSet'/'TagSet' not present -> try 'TagSet'
-        t = tags_dict(eni.get('TagSet', []))
+    # NetworkInterface shapes commonly use 'TagSet'; some environments expose 'Tags'. Handle both.
+    tag_list = eni.get('TagSet') or eni.get('Tags') or []
+    t = tags_dict(tag_list)
     for k, v in needed.items():
         if t.get(k) != v:
             return False
@@ -156,7 +154,7 @@ def main():
                 continue
             if not matches_required(eni, needed_tags):
                 continue
-            create_time = eni.get('TagSetTime') or eni.get('CreateTime')  # CreateTime for ENIs is available in many SDKs; fallback none
+            create_time = eni.get('CreateTime')  # ENI shapes typically do not expose CreateTime; may remain None
             age_days = None
             if create_time:
                 try:
@@ -165,8 +163,12 @@ def main():
                     age_days = (now - create_time).days
                 except Exception:
                     age_days = None
-            if args.older_than_days is not None and age_days is not None and age_days < args.older_than_days:
-                continue
+            # If an age filter is provided but age cannot be determined, skip conservatively.
+            if args.older_than_days is not None:
+                if age_days is None:
+                    continue
+                if age_days < args.older_than_days:
+                    continue
             rec = {
                 'region': region,
                 'eni_id': eni_id,
