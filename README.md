@@ -44,6 +44,7 @@ Python automation additions focused on Kubernetes, AWS, Docker, Git, and securit
 | `aws-s3-lifecycle-gap-auditor.py` | Detects S3 lifecycle gaps and can apply a safe default rule template. |
 | `aws-sqs-unused-queue-auditor.py` | Finds unused SQS queues via metrics; optional tag or safe delete of empty non-DLQs. |
 | `aws-rds-snapshot-public-auditor.py` | Detects public RDS (and Aurora cluster) snapshots; can revoke public restore permission. |
+| `aws-sns-unused-topic-auditor.py` | Finds unused SNS topics via metrics; optional tag or safe delete when no subscriptions. |
 
 ### Quick Usage Examples
 
