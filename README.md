@@ -38,6 +38,7 @@ Python automation additions focused on Kubernetes, AWS, Docker, Git, and securit
 | `docker-layer-size-analyzer.py` | Shows per-layer sizes; flags oversized layers. |
 | `expired-acm-cert-detector.py` | Multi-region ACM certificate expiry reporting. |
 | `aws-eni-unattached-auditor.py` | Finds unattached ENIs (status=available); optional deletion with caps. |
+| `aws-nat-gateway-idle-auditor.py` | Flags potentially idle NAT Gateways using CloudWatch metrics; optional tagging. |
 
 ### Quick Usage Examples
 
