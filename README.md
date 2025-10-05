@@ -45,6 +45,7 @@ Python automation additions focused on Kubernetes, AWS, Docker, Git, and securit
 | `aws-sqs-unused-queue-auditor.py` | Finds unused SQS queues via metrics; optional tag or safe delete of empty non-DLQs. |
 | `aws-rds-snapshot-public-auditor.py` | Detects public RDS (and Aurora cluster) snapshots; can revoke public restore permission. |
 | `aws-sns-unused-topic-auditor.py` | Finds unused SNS topics via metrics; optional tag or safe delete when no subscriptions. |
+| `aws-config-recorder-status-auditor.py` | Audits AWS Config recorder/channel status; can start stopped recorders. |
 
 ### Quick Usage Examples
 
