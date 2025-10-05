@@ -39,6 +39,7 @@ Python automation additions focused on Kubernetes, AWS, Docker, Git, and securit
 | `expired-acm-cert-detector.py` | Multi-region ACM certificate expiry reporting. |
 | `aws-eni-unattached-auditor.py` | Finds unattached ENIs (status=available); optional deletion with caps. |
 | `aws-nat-gateway-idle-auditor.py` | Flags potentially idle NAT Gateways using CloudWatch metrics; optional tagging. |
+| `aws-kms-rotation-auditor.py` | Audits KMS CMKs for rotation; can enable rotation for eligible keys. |
 
 ### Quick Usage Examples
 
