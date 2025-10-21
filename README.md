@@ -48,6 +48,7 @@ Python automation additions focused on Kubernetes, AWS, Docker, Git, and securit
 | `aws-config-recorder-status-auditor.py` | Audits AWS Config recorder/channel status; can start stopped recorders. |
 | `aws-dynamodb-usage-auditor.py` | Flags under-utilized DynamoDB tables (PROVISIONED or PAY_PER_REQUEST); optional tagging. |
 | `aws-secretsmanager-stale-secret-auditor.py` | Flags stale/unrotated Secrets Manager secrets; optional tag or schedule-delete. |
+| `aws-opensearch-idle-domain-auditor.py` | Flags idle OpenSearch/Elasticsearch domains via CloudWatch; optional tagging. |
 
 ### Quick Usage Examples
 
