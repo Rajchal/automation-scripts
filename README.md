@@ -49,6 +49,7 @@ Python automation additions focused on Kubernetes, AWS, Docker, Git, and securit
 | `aws-dynamodb-usage-auditor.py` | Flags under-utilized DynamoDB tables (PROVISIONED or PAY_PER_REQUEST); optional tagging. |
 | `aws-secretsmanager-stale-secret-auditor.py` | Flags stale/unrotated Secrets Manager secrets; optional tag or schedule-delete. |
 | `aws-route53-hosted-zone-orphaned-auditor.py` | Finds hosted zones with only SOA/NS or private zones without VPCs; optional tagging. |
+| `aws-iam-role-last-used-auditor.py` | Flags IAM roles not used in N days; optional tagging and CI-friendly mode. |
 | `aws-opensearch-idle-domain-auditor.py` | Flags idle OpenSearch/Elasticsearch domains via CloudWatch; optional tagging. |
 
 ### Quick Usage Examples
