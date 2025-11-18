@@ -50,10 +50,11 @@ Python automation additions focused on Kubernetes, AWS, Docker, Git, and securit
 | `aws-secretsmanager-stale-secret-auditor.py` | Flags stale/unrotated Secrets Manager secrets; optional tag or schedule-delete. |
 | `aws-route53-hosted-zone-orphaned-auditor.py` | Finds hosted zones with only SOA/NS or private zones without VPCs; optional tagging. |
 | `aws-iam-role-last-used-auditor.py` | Flags IAM roles not used in N days; optional tagging and CI-friendly mode. |
-| `aws-opensearch-idle-domain-auditor.py` | Detects low-activity OpenSearch/ES domains and optionally tags them for review. |
-| `aws-opensearch-idle-domain-auditor.py` | Flags idle OpenSearch/Elasticsearch domains via CW metrics; optional tagging and CI mode. |
-| `aws-efs-unused-filesystem-auditor.py` | Flags unused/low-activity EFS file systems via metrics and mounts; optional tagging. |
-| `aws-opensearch-idle-domain-auditor.py` | Flags idle OpenSearch/Elasticsearch domains via CloudWatch; optional tagging. |
+| `aws-opensearch-idle-domain-auditor.py` | Flags low-activity OpenSearch/Elasticsearch domains (CloudWatch metrics); optional tagging & CI mode. |
+| `aws-efs-unused-filesystem-auditor.py` | Flags unused/low-activity EFS file systems (mount targets + metrics); optional tagging. |
+| `aws-elasticache-idle-auditor.py` | Detects idle ElastiCache replication-groups / cache clusters via CurrConnections & CPU; optional tagging. |
+| `aws-ec2-idle-instance-auditor.py` | Identifies low CPU + low network EC2 instances; optional tag or stop with safety caps & CI exit. |
+| `aws-elasticache-snapshot-retention-auditor.py` | Flags low automatic snapshot retention & old manual Redis snapshots; optional tagging & CI exit. |
 
 ### Quick Usage Examples
 
