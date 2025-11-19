@@ -58,6 +58,7 @@ Python automation additions focused on Kubernetes, AWS, Docker, Git, and securit
 | `aws-rds-idle-instance-auditor.py` | Flags low-activity RDS DB instances and Aurora clusters (CPU, connections, IOPS); optional tagging & CI exit. |
 | `aws-ecr-repository-empty-auditor.py` | Detects empty or stale ECR repositories; optional tagging and safe delete (empty-only) with caps & CI exit. |
 | `aws-s3-unused-bucket-auditor.py` | Flags empty or stale S3 buckets (object count + last modified age); optional tagging & safe empty delete with caps & CI exit. |
+| `k8s-pod-restart-spike-auditor.py` | Detects pods with high container restart counts in recent age window; optional annotation & CI exit. |
 
 ### Quick Usage Examples
 
