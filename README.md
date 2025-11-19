@@ -55,6 +55,7 @@ Python automation additions focused on Kubernetes, AWS, Docker, Git, and securit
 | `aws-elasticache-idle-auditor.py` | Detects idle ElastiCache replication-groups / cache clusters via CurrConnections & CPU; optional tagging. |
 | `aws-ec2-idle-instance-auditor.py` | Identifies low CPU + low network EC2 instances; optional tag or stop with safety caps & CI exit. |
 | `aws-elasticache-snapshot-retention-auditor.py` | Flags low automatic snapshot retention & old manual Redis snapshots; optional tagging & CI exit. |
+| `aws-rds-idle-instance-auditor.py` | Flags low-activity RDS DB instances and Aurora clusters (CPU, connections, IOPS); optional tagging & CI exit. |
 
 ### Quick Usage Examples
 
