@@ -153,6 +153,20 @@ Contributions are welcome! Feel free to submit issues or pull requests to improv
     bash/aws-ecr-image-pruner.sh -r my-repo -d 30 --no-dry-run
     ```
 
+     - **`bash/aws-cloudwatch-alarms-check.sh`**: list alarms in `ALARM` state and optionally publish a summary to an SNS topic.
+
+      Basic example (dry-run):
+
+      ```bash
+      bash/aws-cloudwatch-alarms-check.sh --dry-run
+      ```
+
+      To publish to SNS (dry-run by default), pass an SNS topic ARN and `--no-dry-run`:
+
+      ```bash
+      bash/aws-cloudwatch-alarms-check.sh --sns-topic arn:aws:sns:us-east-1:123456789012:my-topic --no-dry-run
+      ```
+
 
 ## Disclaimer
 
