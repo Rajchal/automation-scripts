@@ -137,6 +137,23 @@ Some scripts rely on system tools:
 Contributions are welcome! Feel free to submit issues or pull requests to improve the scripts or add new ones.
 
 
+### New Bash Helpers (usage)
+
+- **`bash/aws-ecr-image-pruner.sh`**: dry-run by default; deletes ECR images older than X days.
+
+    Basic example (dry-run):
+
+    ```bash
+    bash/bash/aws-ecr-image-pruner.sh -r my-repo -d 30 --dry-run
+    ```
+
+    To actually delete, pass `--no-dry-run` (use with caution):
+
+    ```bash
+    bash/aws-ecr-image-pruner.sh -r my-repo -d 30 --no-dry-run
+    ```
+
+
 ## Disclaimer
 
 Use these scripts at your own risk. Test thoroughly before deploying in production environments. Please contact me if there is any issue using mail.
