@@ -167,6 +167,20 @@ Contributions are welcome! Feel free to submit issues or pull requests to improv
       bash/aws-cloudwatch-alarms-check.sh --sns-topic arn:aws:sns:us-east-1:123456789012:my-topic --no-dry-run
       ```
 
+     - **`bash/ecs-service-redeploy.sh`**: force a new deployment of an ECS service (supports EC2 & Fargate). Dry-run prints the update command.
+
+      Basic example (dry-run):
+
+      ```bash
+      bash/ecs-service-redeploy.sh -c my-cluster -s my-service --dry-run
+      ```
+
+      To perform the update (force new deployment):
+
+      ```bash
+      bash/ecs-service-redeploy.sh -c my-cluster -s my-service --no-dry-run
+      ```
+
 
 ## Disclaimer
 
