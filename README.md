@@ -223,6 +223,20 @@ Contributions are welcome! Feel free to submit issues or pull requests to improv
       bash/aws-iam-unused-keys-report.sh --all --age 180 --deactivate --no-dry-run
       ```
 
+     - **`bash/aws-s3-lifecycle-apply.sh`**: detect S3 buckets missing lifecycle expiration/transition rules and propose a safe lifecycle. Dry-run by default; use `--apply --no-dry-run` to put the lifecycle policy.
+
+      Basic example (dry-run):
+
+      ```bash
+      bash/aws-s3-lifecycle-apply.sh --age-days 365 --transition-days 30
+      ```
+
+      To apply the suggested lifecycle to detected buckets:
+
+      ```bash
+      bash/aws-s3-lifecycle-apply.sh --age-days 365 --transition-days 30 --apply --no-dry-run
+      ```
+
 
 ## Disclaimer
 
