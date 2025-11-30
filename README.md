@@ -209,6 +209,20 @@ Contributions are welcome! Feel free to submit issues or pull requests to improv
       bash/kube-namespace-cleaner.sh -n my-namespace -d 7 --no-dry-run
       ```
 
+     - **`bash/aws-iam-unused-keys-report.sh`**: find IAM access keys that appear unused (based on last-used date) and optionally deactivate them.
+
+      Basic example (dry-run):
+
+      ```bash
+      bash/aws-iam-unused-keys-report.sh --all --age 90
+      ```
+
+      To deactivate candidates (use with caution):
+
+      ```bash
+      bash/aws-iam-unused-keys-report.sh --all --age 180 --deactivate --no-dry-run
+      ```
+
 
 ## Disclaimer
 
