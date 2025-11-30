@@ -271,6 +271,26 @@ Contributions are welcome! Feel free to submit issues or pull requests to improv
      bash/aws-nat-gateway-idle-auditor.sh --days 7 --bytes-threshold 100000000 --delete --no-dry-run
      ```
 
+    - **`bash/aws-elbv2-idle-auditor.sh`**: detect idle ALB (low RequestCount) and NLB (low ProcessedBytes) over a period using CloudWatch. Dry-run by default; can tag or delete candidates with explicit flags.
+
+     Basic example (dry-run):
+
+     ```bash
+     bash/aws-elbv2-idle-auditor.sh --days 7 --req-threshold 100 --bytes-threshold 1000000
+     ```
+
+     To tag candidates:
+
+     ```bash
+     bash/aws-elbv2-idle-auditor.sh --days 7 --tag --no-dry-run
+     ```
+
+     To delete candidates (dangerous):
+
+     ```bash
+     bash/aws-elbv2-idle-auditor.sh --days 7 --delete --no-dry-run
+     ```
+
 
 ## Disclaimer
 
