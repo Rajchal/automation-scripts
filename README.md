@@ -181,6 +181,20 @@ Contributions are welcome! Feel free to submit issues or pull requests to improv
       bash/ecs-service-redeploy.sh -c my-cluster -s my-service --no-dry-run
       ```
 
+     - **`bash/terraform-apply-safe.sh`**: runs `terraform fmt`, `init`, `validate`, and `plan` then prompts to apply. Useful as a safe wrapper before applying changes.
+
+      Basic example:
+
+      ```bash
+      bash/terraform-apply-safe.sh --dir infra
+      ```
+
+      To auto-approve the apply (use with caution):
+
+      ```bash
+      bash/terraform-apply-safe.sh --dir infra --auto-approve
+      ```
+
 
 ## Disclaimer
 
