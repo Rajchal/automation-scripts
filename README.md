@@ -195,6 +195,20 @@ Contributions are welcome! Feel free to submit issues or pull requests to improv
       bash/terraform-apply-safe.sh --dir infra --auto-approve
       ```
 
+     - **`bash/kube-namespace-cleaner.sh`**: safely delete completed jobs and evicted pods in a namespace older than X days (dry-run by default).
+
+      Basic example (dry-run):
+
+      ```bash
+      bash/kube-namespace-cleaner.sh -n my-namespace -d 7 --dry-run
+      ```
+
+      To actually perform deletions (requires `kubectl` + appropriate permissions):
+
+      ```bash
+      bash/kube-namespace-cleaner.sh -n my-namespace -d 7 --no-dry-run
+      ```
+
 
 ## Disclaimer
 
