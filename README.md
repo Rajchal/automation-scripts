@@ -237,6 +237,20 @@ Contributions are welcome! Feel free to submit issues or pull requests to improv
       bash/aws-s3-lifecycle-apply.sh --age-days 365 --transition-days 30 --apply --no-dry-run
       ```
 
+     - **`bash/aws-ec2-idle-instance-auditor.sh`**: find running EC2 instances with low average CPU over a period (uses CloudWatch). Dry-run by default; can stop instances with `--stop --no-dry-run`.
+
+      Basic example (dry-run):
+
+      ```bash
+      bash/aws-ec2-idle-instance-auditor.sh --days 7 --cpu-threshold 3
+      ```
+
+      To stop candidates (use with caution):
+
+      ```bash
+      bash/aws-ec2-idle-instance-auditor.sh --days 7 --cpu-threshold 3 --stop --no-dry-run
+      ```
+
 
 ## Disclaimer
 
