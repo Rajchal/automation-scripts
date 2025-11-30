@@ -251,6 +251,26 @@ Contributions are welcome! Feel free to submit issues or pull requests to improv
       bash/aws-ec2-idle-instance-auditor.sh --days 7 --cpu-threshold 3 --stop --no-dry-run
       ```
 
+    - **`bash/aws-nat-gateway-idle-auditor.sh`**: identify NAT Gateways with low `BytesProcessed` over a period using CloudWatch. Dry-run by default; can tag or delete candidates with explicit flags.
+
+     Basic example (dry-run):
+
+     ```bash
+     bash/aws-nat-gateway-idle-auditor.sh --days 7 --bytes-threshold 100000000
+     ```
+
+     To tag candidates:
+
+     ```bash
+     bash/aws-nat-gateway-idle-auditor.sh --days 7 --bytes-threshold 100000000 --tag --no-dry-run
+     ```
+
+     To delete candidates (dangerous):
+
+     ```bash
+     bash/aws-nat-gateway-idle-auditor.sh --days 7 --bytes-threshold 100000000 --delete --no-dry-run
+     ```
+
 
 ## Disclaimer
 
