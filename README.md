@@ -305,6 +305,19 @@ Contributions are welcome! Feel free to submit issues or pull requests to improv
      ```bash
      bash/aws-elbv2-idle-auditor.sh --days 7 --delete --no-dry-run
      ```
+        - **`bash/aws-efs-unused-filesystem-auditor.sh`**: detect EFS filesystems with low combined IO (read+write) and low average client connections over a period; list candidates and optionally tag them. Dry-run by default; tagging requires `--tag --no-dry-run`.
+
+            Basic example (dry-run):
+
+            ```bash
+            bash/aws-efs-unused-filesystem-auditor.sh --days 14 --io-threshold 1000000 --conn-threshold 1
+            ```
+
+            To tag candidates (apply tag):
+
+            ```bash
+            bash/aws-efs-unused-filesystem-auditor.sh --days 14 --io-threshold 1000000 --conn-threshold 1 --tag --no-dry-run
+            ```
 
 
 ## Disclaimer
