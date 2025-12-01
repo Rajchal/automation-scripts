@@ -82,6 +82,21 @@ python3 python/git-large-file-new-commit-blocker.py --threshold-mb 5
 python3 python/tls-cipher-suite-auditor.py --targets example.com:443 --full --json
 ```
 
+    - **`bash/aws-rds-idle-instance-auditor.sh`**: find RDS DB instances with low CPU and low connections over a period (dry-run by default). Can stop instances with `--stop --no-dry-run` (use caution).
+
+     Basic example (dry-run):
+
+     ```bash
+     bash/aws-rds-idle-instance-auditor.sh --days 7 --cpu-threshold 3 --conn-threshold 2
+     ```
+
+     To stop candidates (dangerous):
+
+     ```bash
+     bash/aws-rds-idle-instance-auditor.sh --days 7 --cpu-threshold 3 --conn-threshold 2 --stop --no-dry-run
+     ```
+
+
 ### Python Dependencies (on-demand)
 
 Install dependencies via requirements file (recommended):
