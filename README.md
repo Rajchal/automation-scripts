@@ -305,6 +305,26 @@ Contributions are welcome! Feel free to submit issues or pull requests to improv
      ```bash
      bash/aws-elbv2-idle-auditor.sh --days 7 --delete --no-dry-run
      ```
+
+        - **`bash/aws-ecr-repository-empty-auditor.sh`**: find empty or stale ECR repositories (based on last image push). Dry-run by default; can tag candidates or delete empty repositories with explicit flags.
+
+            Basic example (dry-run):
+
+            ```bash
+            bash/aws-ecr-repository-empty-auditor.sh --stale-days 180
+            ```
+
+            To tag candidates:
+
+            ```bash
+            bash/aws-ecr-repository-empty-auditor.sh --tag --no-dry-run
+            ```
+
+            To delete empty repositories (dangerous):
+
+            ```bash
+            bash/aws-ecr-repository-empty-auditor.sh --delete --no-dry-run
+            ```
         - **`bash/aws-efs-unused-filesystem-auditor.sh`**: detect EFS filesystems with low combined IO (read+write) and low average client connections over a period; list candidates and optionally tag them. Dry-run by default; tagging requires `--tag --no-dry-run`.
 
             Basic example (dry-run):
