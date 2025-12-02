@@ -325,6 +325,27 @@ Contributions are welcome! Feel free to submit issues or pull requests to improv
             ```bash
             bash/aws-ecr-repository-empty-auditor.sh --delete --no-dry-run
             ```
+
+        - **`bash/aws-s3-unused-bucket-auditor.sh`**: find empty or stale S3 buckets (object count + last modified) and optionally tag or delete empty buckets. Dry-run by default.
+
+            Basic example (dry-run):
+
+            ```bash
+            bash/aws-s3-unused-bucket-auditor.sh --age-days 365
+            ```
+
+            To tag candidates:
+
+            ```bash
+            bash/aws-s3-unused-bucket-auditor.sh --tag --no-dry-run
+            ```
+
+            To delete empty buckets (dangerous):
+
+            ```bash
+            bash/aws-s3-unused-bucket-auditor.sh --delete-empty --no-dry-run
+            ```
+
         - **`bash/aws-efs-unused-filesystem-auditor.sh`**: detect EFS filesystems with low combined IO (read+write) and low average client connections over a period; list candidates and optionally tag them. Dry-run by default; tagging requires `--tag --no-dry-run`.
 
             Basic example (dry-run):
