@@ -47,6 +47,7 @@ Python automation additions focused on Kubernetes, AWS, Docker, Git, and securit
 | `aws-sns-unused-topic-auditor.py` | Finds unused SNS topics via metrics; optional tag or safe delete when no subscriptions. |
 | `aws-config-recorder-status-auditor.py` | Audits AWS Config recorder/channel status; can start stopped recorders. |
 | `aws-config-recorder-status-auditor.sh` | Bash auditor for AWS Config recorders and delivery channels (dry-run default). |
+| `aws-dynamodb-usage-auditor.sh` | Detect DynamoDB tables with very low consumed R/W over a period; optional tagging (dry-run default). |
 | `aws-dynamodb-usage-auditor.py` | Flags under-utilized DynamoDB tables (PROVISIONED or PAY_PER_REQUEST); optional tagging. |
 | `aws-secretsmanager-stale-secret-auditor.py` | Flags stale/unrotated Secrets Manager secrets; optional tag or schedule-delete. |
 | `aws-route53-hosted-zone-orphaned-auditor.py` | Finds hosted zones with only SOA/NS or private zones without VPCs; optional tagging. |
