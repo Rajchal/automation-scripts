@@ -346,6 +346,27 @@ Contributions are welcome! Feel free to submit issues or pull requests to improv
             bash/aws-s3-unused-bucket-auditor.sh --delete-empty --no-dry-run
             ```
 
+        - **`bash/aws-sns-unused-topic-auditor.sh`**: find SNS topics with no subscriptions and low publish counts (by CloudWatch). Dry-run by default; can tag or delete candidates with explicit flags.
+
+            Basic example (dry-run):
+
+            ```bash
+            bash/aws-sns-unused-topic-auditor.sh --days 14 --msg-threshold 0
+            ```
+
+            To tag candidates:
+
+            ```bash
+            bash/aws-sns-unused-topic-auditor.sh --tag --no-dry-run
+            ```
+
+            To delete candidates (dangerous):
+
+            ```bash
+            bash/aws-sns-unused-topic-auditor.sh --delete --no-dry-run
+            ```
+
+
         - **`bash/aws-efs-unused-filesystem-auditor.sh`**: detect EFS filesystems with low combined IO (read+write) and low average client connections over a period; list candidates and optionally tag them. Dry-run by default; tagging requires `--tag --no-dry-run`.
 
             Basic example (dry-run):
