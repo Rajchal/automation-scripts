@@ -51,6 +51,7 @@ Python automation additions focused on Kubernetes, AWS, Docker, Git, and securit
 | `aws-opensearch-idle-domain-auditor.sh` | Detect OpenSearch/Elasticsearch domains with low CPU activity; optional tagging (dry-run default). |
 | `aws-secretsmanager-stale-secret-auditor.sh` | Find Secrets Manager secrets with no rotation or last-changed older than threshold; optional tagging/schedule-delete (dry-run default). |
 | `aws-iam-role-last-used-auditor.sh` | Detect IAM roles with no recent AssumeRole activity (uses CloudTrail); optional tagging (dry-run default). |
+| `aws-elasticache-snapshot-rotate.sh` | Create manual ElastiCache snapshots and rotate old manual snapshots; dry-run by default. |
 | `aws-dynamodb-usage-auditor.py` | Flags under-utilized DynamoDB tables (PROVISIONED or PAY_PER_REQUEST); optional tagging. |
 | `aws-secretsmanager-stale-secret-auditor.py` | Flags stale/unrotated Secrets Manager secrets; optional tag or schedule-delete. |
 | `aws-route53-hosted-zone-orphaned-auditor.py` | Finds hosted zones with only SOA/NS or private zones without VPCs; optional tagging. |
