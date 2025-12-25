@@ -27,13 +27,16 @@ err()  { color red; log "ERROR $1"; reset; }
 slack_alert() {
   [ -z "$SLACK_WEBHOOK_URL" ] && return 0
   local title="$1"; local text="$2"; local color="#ff0000"
-  curl -s -X POST -H 'Content-type: application/json' --data "$(jq -nc --arg t "$title" --arg x "$text" --arg c "$color" '{attachments:[{color:$c,title:$t,text:$x}]}}')" "$SLACK_WEBHOOK_URL" >/dev/null || true
+  # Build a proper JSON payload (attachments is still supported)
+  curl -s -X POST -H 'Content-type: application/json' --data "$(jq -nc --arg t "$title" --arg x "$text" --arg c "$color" '{attachments:[{color:$c,title:$t,text:$x}]}')" "$SLACK_WEBHOOK_URL" >/dev/null || true
 }
 
 email_alert() {
   [ -z "$MAIL_TO" ] && return 0
   local subject="$1"; local body="$2"
-  printf "%s\n" "$body" | mail -s "$subject" "$MAIL_TO" || true
+  if command -v mail >/dev/null 2>&1; then
+    printf "%s\n" "$body" | mail -s "$subject" "$MAIL_TO" || true
+  fi
 }
 
 aws_cmd() {
@@ -44,19 +47,24 @@ cloudwatch_region() {
   if [ "$WAF_SCOPE" = "CLOUDFRONT" ]; then echo "us-east-1"; else echo "$REGION"; fi
 }
 
+# WAFv2 API region: CLOUDFRONT scope is always us-east-1
+wafv2_api_region() {
+  if [ "$WAF_SCOPE" = "CLOUDFRONT" ]; then echo "us-east-1"; else echo "$REGION"; fi
+}
+
 list_web_acls() {
-  aws_cmd wafv2 list-web-acls --scope "$WAF_SCOPE" --region "$REGION" --output json \
+  aws_cmd wafv2 list-web-acls --scope "$WAF_SCOPE" --region "$(wafv2_api_region)" --output json \
     | jq -r '.WebACLs[]?|[.Name,.ARN,.Id] | @tsv'
 }
 
 get_web_acl_json() {
   local name="$1" id="$2"
-  aws_cmd wafv2 get-web-acl --name "$name" --scope "$WAF_SCOPE" --id "$id" --region "$REGION" --output json
+  aws_cmd wafv2 get-web-acl --name "$name" --scope "$WAF_SCOPE" --id "$id" --region "$(wafv2_api_region)" --output json
 }
 
 get_logging_json() {
   local arn="$1"
-  aws_cmd wafv2 get-logging-configuration --resource-arn "$arn" --region "$REGION" --output json 2>/dev/null || true
+  aws_cmd wafv2 get-logging-configuration --resource-arn "$arn" --region "$(wafv2_api_region)" --output json 2>/dev/null || true
 }
 
 metric_sum() {
@@ -65,10 +73,13 @@ metric_sum() {
   end_ts=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
   start_ts=$(date -u -d "-${LOOKBACK_HOURS} hours" +"%Y-%m-%dT%H:%M:%SZ")
   cw_region=$(cloudwatch_region)
+  # Add required Region dimension: Global for CLOUDFRONT, otherwise the AWS region
+  local dim_region
+  if [ "$WAF_SCOPE" = "CLOUDFRONT" ]; then dim_region="Global"; else dim_region="$REGION"; fi
   aws_cmd cloudwatch get-metric-statistics \
     --namespace "AWS/WAFV2" \
     --metric-name "$metric" \
-    --dimensions Name=WebACL,Value="$web_acl" Name=Rule,Value="$rule" \
+    --dimensions Name=Region,Value="$dim_region" Name=WebACL,Value="$web_acl" Name=Rule,Value="$rule" \
     --start-time "$start_ts" --end-time "$end_ts" \
     --period "$METRIC_PERIOD" --statistics Sum \
     --region "$cw_region" --output json \
@@ -87,6 +98,7 @@ mapfile -t acls < <(list_web_acls || true)
 if [ ${#acls[@]} -eq 0 ]; then warn "No Web ACLs found"; exit 0; fi
 
 printf "AWS WAF Web ACL Report\nGenerated: %s\nScope: %s\nRegion: %s\n\n" "$(ts)" "$WAF_SCOPE" "$REGION" | tee -a "$report_file" >/dev/null
+printf "Thresholds: BlockedRate>=%s%% BlockedCount>=%s Lookback=%sh Period=%ss\n\n" "$ALERT_BLOCKED_RATE" "$ALERT_BLOCKED_COUNT" "$LOOKBACK_HOURS" "$METRIC_PERIOD" | tee -a "$report_file" >/dev/null
 
 for row in "${acls[@]}"; do
   name=$(printf "%s" "$row" | awk '{print $1}')
