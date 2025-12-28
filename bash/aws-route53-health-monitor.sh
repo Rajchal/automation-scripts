@@ -1,9 +1,8 @@
 #!/bin/bash
 
 ################################################################################
-# AWS Route53 Health Monitor
-# Monitors Route53 health checks and failover status
-# Tracks health check metrics, alarm status, and failover records
+# AWS Route 53 Health & Failover Monitor
+# Health checks, failover DNS, alias target health, CloudTrail DNS change errors
 ################################################################################
 
 set -euo pipefail
