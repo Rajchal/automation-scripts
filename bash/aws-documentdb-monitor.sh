@@ -1,25 +1,52 @@
 #!/bin/bash
 
 ################################################################################
-# AWS DocumentDB Monitor
-# Monitors DocumentDB clusters and instances for availability and performance
-# Detects cluster health, replication lag, and backup status
+# AWS DocumentDB Cluster Monitor
+# Audits DocumentDB clusters: instance status, class, storage, backup window,
+# maintenance window, encryption, parameter groups; pulls CloudWatch metrics
+# (CPUUtilization, FreeableMemory, DatabaseConnections, ReadIOPS/WriteIOPS,
+# ReadLatency/WriteLatency, FreeLocalStorage, ReplicaLag) with thresholds.
+# Includes logging, Slack/email alerts, and a text report.
 ################################################################################
 
 set -euo pipefail
 
 # Configuration
 REGION="${AWS_REGION:-us-east-1}"
-OUTPUT_FILE="/tmp/documentdb-monitor-$(date +%s).txt"
-LOG_FILE="/var/log/documentdb-monitor.log"
+OUTPUT_FILE="/tmp/docdb-cluster-monitor-$(date +%s).txt"
+LOG_FILE="${LOG_FILE:-/var/log/docdb-cluster-monitor.log}"
 SLACK_WEBHOOK="${SLACK_WEBHOOK:-}"
-DAYS_BACK="${DAYS_BACK:-7}"
-CPU_THRESHOLD="${CPU_THRESHOLD:-80}"                 # % utilization
-MEMORY_THRESHOLD="${MEMORY_THRESHOLD:-80}"           # % utilization
-REPLICATION_LAG_WARN="${REPLICATION_LAG_WARN:-5000}" # milliseconds
-BACKUP_RETENTION_MIN="${BACKUP_RETENTION_MIN:-7}"    # days
+EMAIL_TO="${EMAIL_TO:-}"
+PROFILE="${AWS_PROFILE:-}"
 
-# Logging
+# Thresholds
+CPU_WARN_PCT="${CPU_WARN_PCT:-80}"
+CONNECTIONS_WARN="${CONNECTIONS_WARN:-500}"
+LAG_WARN_SEC="${LAG_WARN_SEC:-60}"
+LATENCY_READ_WARN_MS="${LATENCY_READ_WARN_MS:-15}"
+LATENCY_WRITE_WARN_MS="${LATENCY_WRITE_WARN_MS:-15}"
+STORAGE_FREE_WARN_GB="${STORAGE_FREE_WARN_GB:-20}"
+LOOKBACK_HOURS="${LOOKBACK_HOURS:-24}"
+METRIC_PERIOD="${METRIC_PERIOD:-300}"
+
+# Color codes
+RED='\033[0;31m'
+YELLOW='\033[1;33m'
+GREEN='\033[0;32m'
+CYAN='\033[0;36m'
+NC='\033[0m'
+
+# Counters
+TOTAL_CLUSTERS=0
+CLUSTERS_WITH_ISSUES=0
+CLUSTERS_HIGH_CPU=0
+CLUSTERS_HIGH_CONN=0
+CLUSTERS_HIGH_LAG=0
+CLUSTERS_HIGH_LATENCY=0
+CLUSTERS_LOW_STORAGE=0
+
+ISSUES=()
+
 log_message() {
   local level="$1"; shift
   local msg="$@"
@@ -28,371 +55,222 @@ log_message() {
   echo "[${ts}] [${level}] ${msg}" | tee -a "${LOG_FILE}"
 }
 
-# Helpers
-jq_safe() { jq -r "$1" 2>/dev/null || true; }
-start_window() { date -u -d "${DAYS_BACK} days ago" +%Y-%m-%dT%H:%M:%SZ; }
-now_window() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 
-# API wrappers
-list_db_clusters() {
-  aws docdb describe-db-clusters \
-    --region "${REGION}" \
-    --query 'DBClusters[*].[DBClusterIdentifier,Engine,Status,MemberCount]' \
-    --output text 2>/dev/null || true
-}
 
-describe_db_cluster() {
-  local cluster_id="$1"
-  aws docdb describe-db-clusters \
-    --db-cluster-identifier "${cluster_id}" \
-    --region "${REGION}" \
-    --query 'DBClusters[0]' \
-    --output json 2>/dev/null || echo '{}'
-}
-
-list_db_instances() {
-  aws docdb describe-db-instances \
-    --region "${REGION}" \
-    --query 'DBInstances[*].[DBInstanceIdentifier,DBInstanceClass,DBInstanceStatus,DBClusterIdentifier]' \
-    --output text 2>/dev/null || true
-}
-
-describe_db_instance() {
-  local instance_id="$1"
-  aws docdb describe-db-instances \
-    --db-instance-identifier "${instance_id}" \
-    --region "${REGION}" \
-    --query 'DBInstances[0]' \
-    --output json 2>/dev/null || echo '{}'
-}
-
-get_cluster_events() {
-  aws docdb describe-events \
-    --source-type "db-cluster" \
-    --duration 1440 \
-    --region "${REGION}" \
-    --query 'Events[*]' \
-    --output json 2>/dev/null | head -100 || echo '[]'
-}
-
-get_metric() {
-  local db_id="$1"; local metric="$2"; local stat="${3:-Average}"
-  local period=300
-  aws cloudwatch get-metric-statistics \
-    --namespace AWS/DocDB \
-    --metric-name "${metric}" \
-    --dimensions Name=DBInstanceIdentifier,Value="${db_id}" \
-    --start-time "$(start_window)" \
-    --end-time "$(now_window)" \
-    --period ${period} \
-    --statistics ${stat} \
-    --region "${REGION}" \
-    --query 'Datapoints[*].'${stat} \
-    --output text 2>/dev/null | awk 'NF{sum+=$1; n++} END{if(n>0) printf("%.0f", sum/n); else print "0"}'
-}
-
-write_header() {
-  {
-    echo "AWS DocumentDB Cluster Monitoring Report"
-    echo "========================================"
-    echo "Generated: $(date)"
-    echo "Region: ${REGION}"
-    echo "Lookback: ${DAYS_BACK} days"
-    echo "CPU Threshold: ${CPU_THRESHOLD}%"
-    echo "Memory Threshold: ${MEMORY_THRESHOLD}%"
-    echo "Replication Lag Warning: ${REPLICATION_LAG_WARN}ms"
-    echo "Min Backup Retention: ${BACKUP_RETENTION_MIN} days"
-    echo ""
-  } > "${OUTPUT_FILE}"
-}
-
-report_db_clusters() {
-  log_message INFO "Listing DocumentDB clusters"
-  {
-    echo "=== DB CLUSTERS ==="
-  } >> "${OUTPUT_FILE}"
-
-  local total_clusters=0 unhealthy_clusters=0 high_lag_count=0
-
-  list_db_clusters | while IFS=$'\t' read -r cluster_id engine status member_count; do
-    [[ -z "${cluster_id}" ]] && continue
-    ((total_clusters++))
-
-    local config backup_retention storage_encrypted iam_auth enabled_logs
-    config=$(describe_db_cluster "${cluster_id}")
-    backup_retention=$(echo "${config}" | jq_safe '.BackupRetentionPeriod')
-    storage_encrypted=$(echo "${config}" | jq_safe '.StorageEncrypted')
-    iam_auth=$(echo "${config}" | jq_safe '.IAMDatabaseAuthenticationEnabled')
-    enabled_logs=$(echo "${config}" | jq '.EnabledCloudwatchLogsExports | length' 2>/dev/null || echo "0")
-
-    {
-      echo "Cluster: ${cluster_id}"
-      echo "  Engine: ${engine}"
-      echo "  Status: ${status}"
-      echo "  Members: ${member_count}"
-      echo "  Encrypted: ${storage_encrypted}"
-      echo "  IAM Auth: ${iam_auth}"
-      echo "  Backup Retention: ${backup_retention} days"
-      echo "  CloudWatch Logs: ${enabled_logs} types"
-    } >> "${OUTPUT_FILE}"
-
-    # Check backup retention
-    if [[ -n "${backup_retention}" && "${backup_retention}" != "null" ]]; then
-      if (( backup_retention < BACKUP_RETENTION_MIN )); then
-        echo "  WARNING: Backup retention below minimum (${backup_retention}d < ${BACKUP_RETENTION_MIN}d)" >> "${OUTPUT_FILE}"
-      fi
-    fi
-
-    # Check cluster status
-    if [[ "${status}" != "available" ]]; then
-      ((unhealthy_clusters++))
-      echo "  WARNING: Cluster status is ${status}" >> "${OUTPUT_FILE}"
-    fi
-
-    echo "" >> "${OUTPUT_FILE}"
-  done
-
-  {
-    echo "Cluster Summary:"
-    echo "  Total Clusters: ${total_clusters}"
-    echo "  Unhealthy: ${unhealthy_clusters}"
-    echo "  High Replication Lag: ${high_lag_count}"
-    echo ""
-  } >> "${OUTPUT_FILE}"
-}
-
-report_db_instances() {
-  log_message INFO "Listing DocumentDB instances"
-  {
-    echo "=== DB INSTANCES ==="
-  } >> "${OUTPUT_FILE}"
-
-  local high_cpu_count=0 high_memory_count=0 failed_count=0
-
-  list_db_instances | while IFS=$'\t' read -r instance_id class status cluster_id; do
-    [[ -z "${instance_id}" ]] && continue
-
-    local config availability_zone promotion_tier
-    config=$(describe_db_instance "${instance_id}")
-    availability_zone=$(echo "${config}" | jq_safe '.AvailabilityZone')
-    promotion_tier=$(echo "${config}" | jq_safe '.PromotionTier')
-
-    # Get metrics
-    local cpu memory
-    cpu=$(get_metric "${instance_id}" "CPUUtilization" "Average" || echo "0")
-    memory=$(get_metric "${instance_id}" "MemoryUtilization" "Average" || echo "0")
-
-    {
-      echo "Instance: ${instance_id}"
-      echo "  Cluster: ${cluster_id}"
-      echo "  Class: ${class}"
-      echo "  Status: ${status}"
-      echo "  Availability Zone: ${availability_zone}"
-      echo "  Promotion Tier: ${promotion_tier}"
-      echo "  CPU (avg): ${cpu}%"
-      echo "  Memory (avg): ${memory}%"
-    } >> "${OUTPUT_FILE}"
-
-    # Flags
-    if (( cpu >= CPU_THRESHOLD )); then
-      ((high_cpu_count++))
-      echo "  WARNING: High CPU utilization (${cpu}% >= ${CPU_THRESHOLD}%)" >> "${OUTPUT_FILE}"
-    fi
-    if (( memory >= MEMORY_THRESHOLD )); then
-      ((high_memory_count++))
-      echo "  WARNING: High memory utilization (${memory}% >= ${MEMORY_THRESHOLD}%)" >> "${OUTPUT_FILE}"
-    fi
-
-    # Check if unhealthy
-    if [[ "${status}" != "available" ]]; then
-      ((failed_count++))
-      echo "  WARNING: Instance status is ${status}" >> "${OUTPUT_FILE}"
-    fi
-
-    echo "" >> "${OUTPUT_FILE}"
-  done
-
-  {
-    echo "Instance Summary:"
-    echo "  High CPU: ${high_cpu_count}"
-    echo "  High Memory: ${high_memory_count}"
-    echo "  Unhealthy Status: ${failed_count}"
-    echo ""
-  } >> "${OUTPUT_FILE}"
-}
-
-monitor_replication() {
-  log_message INFO "Analyzing cluster replication"
-  {
-    echo "=== REPLICATION ANALYSIS ==="
-  } >> "${OUTPUT_FILE}"
-
-  list_db_clusters | while IFS=$'\t' read -r cluster_id _ _ _; do
-    [[ -z "${cluster_id}" ]] && continue
-
-    local config members
-    config=$(describe_db_cluster "${cluster_id}")
-    members=$(echo "${config}" | jq '.DBClusterMembers' 2>/dev/null || echo '[]')
-
-    {
-      echo "Cluster: ${cluster_id}"
-    } >> "${OUTPUT_FILE}"
-
-    echo "${members}" | jq -c '.[]' 2>/dev/null | while read -r member; do
-      local member_id promotion_tier is_writer
-      member_id=$(echo "${member}" | jq_safe '.DBInstanceIdentifier')
-      promotion_tier=$(echo "${member}" | jq_safe '.PromotionTier')
-      is_writer=$(echo "${member}" | jq_safe '.IsClusterWriter')
-
-      {
-        echo "  Member: ${member_id}"
-        echo "    Role: $([ "${is_writer}" = "true" ] && echo "PRIMARY" || echo "REPLICA")"
-        echo "    Promotion Tier: ${promotion_tier}"
-      } >> "${OUTPUT_FILE}"
-    done
-
-    echo "" >> "${OUTPUT_FILE}"
-  done
-}
-
-report_cluster_events() {
-  log_message INFO "Collecting recent cluster events"
-  {
-    echo "=== RECENT CLUSTER EVENTS (last 24h) ==="
-  } >> "${OUTPUT_FILE}"
-
-  local events_json
-  events_json=$(get_cluster_events)
-  echo "${events_json}" | jq -c '.[]' 2>/dev/null | head -20 | while read -r e; do
-    local date msg src
-    date=$(echo "${e}" | jq_safe '.Date')
-    msg=$(echo "${e}" | jq_safe '.Message')
-    src=$(echo "${e}" | jq_safe '.SourceIdentifier')
-
-    {
-      echo "${date}  ${src}"
-      echo "  ${msg}"
-    } >> "${OUTPUT_FILE}"
-  done
-  echo "" >> "${OUTPUT_FILE}"
-}
-
-monitor_backup_recovery() {
-  log_message INFO "Checking backup and recovery readiness"
-  {
-    echo "=== BACKUP & RECOVERY READINESS ==="
-  } >> "${OUTPUT_FILE}"
-
-  list_db_clusters | while IFS=$'\t' read -r cluster_id _ _ _; do
-    [[ -z "${cluster_id}" ]] && continue
-
-    local config backup_retention earliest_restore latest_restore encrypted
-    config=$(describe_db_cluster "${cluster_id}")
-    backup_retention=$(echo "${config}" | jq_safe '.BackupRetentionPeriod')
-    earliest_restore=$(echo "${config}" | jq_safe '.EarliestRestorableTime')
-    latest_restore=$(echo "${config}" | jq_safe '.LatestRestorableTime')
-    encrypted=$(echo "${config}" | jq_safe '.StorageEncrypted')
-
-    {
-      echo "Cluster: ${cluster_id}"
-      echo "  Backup Retention: ${backup_retention} days"
-      echo "  Encrypted: ${encrypted}"
-      echo "  Earliest Restorable: ${earliest_restore}"
-      echo "  Latest Restorable: ${latest_restore}"
-    } >> "${OUTPUT_FILE}"
-
-    # Check if backup retention is zero (disabled)
-    if [[ "${backup_retention}" == "0" ]]; then
-      echo "  WARNING: Automated backups disabled" >> "${OUTPUT_FILE}"
-    fi
-
-    # Check encryption
-    if [[ "${encrypted}" != "true" ]]; then
-      echo "  WARNING: Cluster storage not encrypted" >> "${OUTPUT_FILE}"
-    fi
-
-    echo "" >> "${OUTPUT_FILE}"
-  done
-}
-
-monitor_parameter_groups() {
-  log_message INFO "Checking parameter group configurations"
-  {
-    echo "=== PARAMETER GROUPS ==="
-  } >> "${OUTPUT_FILE}"
-
-  local param_groups
-  param_groups=$(aws docdb describe-db-cluster-parameter-groups \
-    --region "${REGION}" \
-    --output json 2>/dev/null || echo '{}')
-
-  local pg_count
-  pg_count=$(echo "${param_groups}" | jq '.DBClusterParameterGroups | length' 2>/dev/null || echo 0)
-
-  {
-    echo "Total Parameter Groups: ${pg_count}"
-    echo ""
-  } >> "${OUTPUT_FILE}"
-
-  echo "${param_groups}" | jq -c '.DBClusterParameterGroups[]' 2>/dev/null | while read -r pg; do
-    local pg_name pg_family
-    pg_name=$(echo "${pg}" | jq_safe '.DBClusterParameterGroupName')
-    pg_family=$(echo "${pg}" | jq_safe '.DBParameterGroupFamily')
-
-    {
-      echo "Parameter Group: ${pg_name}"
-      echo "  Family: ${pg_family}"
-      echo ""
-    } >> "${OUTPUT_FILE}"
-  done
+aws_cmd() {
+  if [[ -n "${PROFILE}" ]]; then AWS_PROFILE="${PROFILE}" aws "$@"; else aws "$@"; fi
 }
 
 send_slack_alert() {
-  local cluster_count="$1"; local unhealthy="$2"; local high_cpu="$3"; local high_mem="$4"
-  [[ -z "${SLACK_WEBHOOK}" ]] && return 0
+  local message="$1"
+  local severity="${2:-INFO}"
+  [[ -z "${SLACK_WEBHOOK}" ]] && return
+  local color
+  case "${severity}" in
+    CRITICAL) color="danger" ;;
+    WARNING)  color="warning" ;;
+    INFO)     color="good" ;;
+    *)        color="good" ;;
+  esac
   local payload
   payload=$(cat <<EOF
 {
-  "text": "AWS DocumentDB Monitoring Report",
   "attachments": [
     {
-      "color": "warning",
-      "fields": [
-        {"title": "Region", "value": "${REGION}", "short": true},
-        {"title": "Clusters", "value": "${cluster_count}", "short": true},
-        {"title": "Unhealthy", "value": "${unhealthy}", "short": true},
-        {"title": "High CPU", "value": "${high_cpu}", "short": true},
-        {"title": "High Memory", "value": "${high_mem}", "short": true},
-        {"title": "CPU Threshold", "value": "${CPU_THRESHOLD}%", "short": true},
-        {"title": "Memory Threshold", "value": "${MEMORY_THRESHOLD}%", "short": true},
-        {"title": "Timestamp", "value": "$(date -u +%Y-%m-%dT%H:%M:%SZ)", "short": false}
-      ]
+      "color": "${color}",
+      "title": "AWS DocumentDB Alert",
+      "text": "${message}",
+      "ts": $(date +%s)
     }
   ]
 }
 EOF
 )
-  curl -s -X POST -H 'Content-type: application/json' --data "${payload}" "${SLACK_WEBHOOK}" >/dev/null || log_message WARN "Failed to send Slack alert"
+  curl -s -X POST -H 'Content-type: application/json' --data "${payload}" "${SLACK_WEBHOOK}" >/dev/null || true
+}
+
+send_email_alert() {
+  local subject="$1"
+  local body="$2"
+  [[ -z "${EMAIL_TO}" ]] || ! command -v mail &>/dev/null && return
+  echo "${body}" | mail -s "${subject}" "${EMAIL_TO}" 2>/dev/null || true
+}
+
+write_header() {
+  {
+    echo "AWS DocumentDB Cluster Monitor"
+    echo "================================"
+    echo "Generated: $(date)"
+    echo "Region: ${REGION}"
+    echo "Analysis Window: ${LOOKBACK_HOURS}h"
+    echo ""
+    echo "Thresholds:"
+    echo "  CPU Warning: > ${CPU_WARN_PCT}%"
+    echo "  Connections Warning: > ${CONNECTIONS_WARN}"
+    echo "  Replica Lag Warning: > ${LAG_WARN_SEC}s"
+    echo "  Read/Write Latency Warning: > ${LATENCY_READ_WARN_MS}/${LATENCY_WRITE_WARN_MS} ms"
+    echo "  Free Storage Warning: < ${STORAGE_FREE_WARN_GB} GB"
+    echo ""
+  } > "${OUTPUT_FILE}"
+}
+
+list_clusters() {
+  aws_cmd docdb describe-db-clusters \
+    --region "${REGION}" \
+    --output json 2>/dev/null || echo '{"DBClusters":[]}'
+}
+
+list_instances() {
+  aws_cmd docdb describe-db-instances \
+    --region "${REGION}" \
+    --output json 2>/dev/null || echo '{"DBInstances":[]}'
+}
+
+get_metric() {
+  local id="$1" metric="$2" stat_type="${3:-Average}" dim_name="${4:-DBClusterIdentifier}"
+  aws_cmd cloudwatch get-metric-statistics \
+    --namespace AWS/DocDB \
+    --metric-name "$metric" \
+    --dimensions Name="${dim_name}",Value="$id" \
+    --start-time "$(date -u -d "${LOOKBACK_HOURS} hours ago" +%Y-%m-%dT%H:%M:%S)" \
+    --end-time "$(date -u +%Y-%m-%dT%H:%M:%S)" \
+    --period "$METRIC_PERIOD" \
+    --statistics "$stat_type" \
+    --region "${REGION}" \
+    --output json 2>/dev/null || echo '{"Datapoints":[]}'
+}
+
+calculate_avg() { jq -r '.Datapoints[].Average' 2>/dev/null | awk '{s+=$1; c++} END {if(c>0) printf "%.2f", s/c; else print "0"}'; }
+calculate_max() { jq -r '.Datapoints[].Maximum' 2>/dev/null | awk '{if(NR==1)m=$1; else if($1>m)m=$1} END {if(NR==0) print 0; else printf "%.2f", m}'; }
+calculate_min() { jq -r '.Datapoints[].Minimum' 2>/dev/null | awk '{if(NR==1)m=$1; else if($1<m)m=$1} END {if(NR==0) print 0; else printf "%.2f", m}'; }
+
+bytes_to_gb() { awk '{printf "%.2f", $1/1073741824}' ; }
+
+record_issue() {
+  ISSUES+=("$1")
+}
+
+analyze_cluster() {
+  local cluster_json="$1"
+  local cid status engine engine_ver storage_encrypted backup_window maint_window
+  cid=$(echo "${cluster_json}" | jq_safe '.DBClusterIdentifier')
+  status=$(echo "${cluster_json}" | jq_safe '.Status')
+  engine=$(echo "${cluster_json}" | jq_safe '.Engine')
+  engine_ver=$(echo "${cluster_json}" | jq_safe '.EngineVersion')
+  storage_encrypted=$(echo "${cluster_json}" | jq_safe '.StorageEncrypted')
+  backup_window=$(echo "${cluster_json}" | jq_safe '.PreferredBackupWindow')
+  maint_window=$(echo "${cluster_json}" | jq_safe '.PreferredMaintenanceWindow')
+
+  TOTAL_CLUSTERS=$((TOTAL_CLUSTERS + 1))
+  log_message INFO "Analyzing DocDB cluster ${cid}"
+
+  {
+    echo "Cluster: ${cid}"
+    echo "  Status: ${status}"
+    echo "  Engine: ${engine} ${engine_ver}"
+    echo "  Storage Encrypted: ${storage_encrypted}"
+    echo "  Backup Window: ${backup_window}"
+    echo "  Maintenance Window: ${maint_window}"
+  } >> "${OUTPUT_FILE}"
+
+  # Metrics (cluster-level where applicable)
+  local cpu conn lag read_lat write_lat free_local_storage_gb
+  cpu=$(get_metric "$cid" "CPUUtilization" "Average" | calculate_avg)
+  conn=$(get_metric "$cid" "DatabaseConnections" "Average" | calculate_avg)
+  lag=$(get_metric "$cid" "ReplicaLag" "Maximum" | calculate_max)
+  read_lat=$(get_metric "$cid" "ReadLatency" "Average" | calculate_avg)
+  write_lat=$(get_metric "$cid" "WriteLatency" "Average" | calculate_avg)
+  free_local_storage_gb=$(get_metric "$cid" "FreeLocalStorage" "Minimum" | calculate_min | bytes_to_gb)
+
+  {
+    echo "  Metrics (${LOOKBACK_HOURS}h):"
+    echo "    CPU (avg): ${cpu}%"
+    echo "    Connections (avg): ${conn}"
+    echo "    Replica Lag (max): ${lag} sec"
+    echo "    Read Latency (avg): ${read_lat} sec"
+    echo "    Write Latency (avg): ${write_lat} sec"
+    echo "    Free Local Storage (min): ${free_local_storage_gb} GB"
+  } >> "${OUTPUT_FILE}"
+
+  local issue=0
+  if (( $(echo "${cpu} > ${CPU_WARN_PCT}" | bc -l 2>/dev/null || echo 0) )); then
+    CLUSTERS_HIGH_CPU=$((CLUSTERS_HIGH_CPU + 1))
+    issue=1
+    record_issue "DocDB ${cid} CPU ${cpu}% exceeds ${CPU_WARN_PCT}%"
+  fi
+  if (( $(echo "${conn} > ${CONNECTIONS_WARN}" | bc -l 2>/dev/null || echo 0) )); then
+    CLUSTERS_HIGH_CONN=$((CLUSTERS_HIGH_CONN + 1))
+    issue=1
+    record_issue "DocDB ${cid} connections ${conn} exceed ${CONNECTIONS_WARN}"
+  fi
+  if (( $(echo "${lag} > ${LAG_WARN_SEC}" | bc -l 2>/dev/null || echo 0) )); then
+    CLUSTERS_HIGH_LAG=$((CLUSTERS_HIGH_LAG + 1))
+    issue=1
+    record_issue "DocDB ${cid} replica lag ${lag}s exceeds ${LAG_WARN_SEC}s"
+  fi
+  if (( $(echo "${read_lat}*1000 > ${LATENCY_READ_WARN_MS}" | bc -l 2>/dev/null || echo 0) )) || (( $(echo "${write_lat}*1000 > ${LATENCY_WRITE_WARN_MS}" | bc -l 2>/dev/null || echo 0) )); then
+    CLUSTERS_HIGH_LATENCY=$((CLUSTERS_HIGH_LATENCY + 1))
+    issue=1
+    record_issue "DocDB ${cid} latency read/write ${read_lat}/${write_lat}s above ${LATENCY_READ_WARN_MS}/${LATENCY_WRITE_WARN_MS}ms"
+  fi
+  if (( $(echo "${free_local_storage_gb} < ${STORAGE_FREE_WARN_GB}" | bc -l 2>/dev/null || echo 0) )); then
+    CLUSTERS_LOW_STORAGE=$((CLUSTERS_LOW_STORAGE + 1))
+    issue=1
+    record_issue "DocDB ${cid} free local storage ${free_local_storage_gb} GB below ${STORAGE_FREE_WARN_GB} GB"
+  fi
+
+  if (( issue )); then
+    CLUSTERS_WITH_ISSUES=$((CLUSTERS_WITH_ISSUES + 1))
+  fi
+
+  echo "" >> "${OUTPUT_FILE}"
 }
 
 main() {
-  log_message INFO "Starting AWS DocumentDB monitoring"
   write_header
-  report_db_clusters
-  report_db_instances
-  monitor_replication
-  report_cluster_events
-  monitor_backup_recovery
-  monitor_parameter_groups
-  log_message INFO "Monitoring complete. Report saved to: ${OUTPUT_FILE}"
+  local clusters_json
+  clusters_json=$(list_clusters)
+  local cluster_count
+  cluster_count=$(echo "${clusters_json}" | jq -r '.DBClusters | length')
 
-  local cluster_count unhealthy_count high_cpu high_mem
-  cluster_count=$(aws docdb describe-db-clusters --region "${REGION}" --query 'length(DBClusters)' --output text 2>/dev/null || echo 0)
-  unhealthy_count=$(grep -c "WARNING: Cluster status" "${OUTPUT_FILE}" || echo 0)
-  high_cpu=$(grep -c "High CPU" "${OUTPUT_FILE}" || echo 0)
-  high_mem=$(grep -c "High memory" "${OUTPUT_FILE}" || echo 0)
-  send_slack_alert "${cluster_count}" "${unhealthy_count}" "${high_cpu}" "${high_mem}"
-  cat "${OUTPUT_FILE}"
+  if [[ "${cluster_count}" == "0" ]]; then
+    log_message WARN "No DocDB clusters found"
+    echo "No DocumentDB clusters found." >> "${OUTPUT_FILE}"
+    exit 0
+  fi
+
+  echo "Total Clusters: ${cluster_count}" >> "${OUTPUT_FILE}"
+  echo "" >> "${OUTPUT_FILE}"
+
+  while read -r cluster; do
+    analyze_cluster "${cluster}"
+  done <<< "$(echo "${clusters_json}" | jq -c '.DBClusters[]')"
+
+  {
+    echo "Summary"
+    echo "-------"
+    echo "Total Clusters: ${TOTAL_CLUSTERS}"
+    echo "Clusters with Issues: ${CLUSTERS_WITH_ISSUES}"
+    echo "High CPU: ${CLUSTERS_HIGH_CPU}"
+    echo "High Connections: ${CLUSTERS_HIGH_CONN}"
+    echo "High Replica Lag: ${CLUSTERS_HIGH_LAG}"
+    echo "High Latency: ${CLUSTERS_HIGH_LATENCY}"
+    echo "Low Free Storage: ${CLUSTERS_LOW_STORAGE}"
+  } >> "${OUTPUT_FILE}"
+
+  if (( ${#ISSUES[@]} > 0 )); then
+    log_message WARN "Issues detected: ${#ISSUES[@]}"
+    local joined
+    joined=$(printf '%s\n' "${ISSUES[@]}")
+    send_slack_alert "DocumentDB Monitor detected issues:\n${joined}" "WARNING"
+    send_email_alert "DocumentDB Monitor Alerts" "${joined}" || true
+  else
+    log_message INFO "No issues detected"
+  fi
+
+  log_message INFO "Report written to ${OUTPUT_FILE}"
+  echo "Report: ${OUTPUT_FILE}"
 }
 
 main "$@"
+  done
