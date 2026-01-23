@@ -1,6 +1,127 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+REGION="${AWS_REGION:-${REGION:-us-east-1}}"
+HOURS_OLD="${HOURS_OLD:-24}"
+SLACK_WEBHOOK="${SLACK_WEBHOOK:-}"
+PROFILE_OPT=""
+if [[ -n "${AWS_PROFILE:-}" ]]; then
+  PROFILE_OPT="--profile ${AWS_PROFILE}"
+fi
+
+LOG_FILE="/var/log/aws-emr-cluster-monitor.log"
+REPORT_FILE="/tmp/emr-cluster-monitor-$(date +%Y%m%d%H%M%S).txt"
+NOW_TS=$(date +%s)
+
+log_message() {
+  mkdir -p "$(dirname "$LOG_FILE")"
+  echo "$(date '+%Y-%m-%d %H:%M:%S') - $*" | tee -a "$LOG_FILE"
+}
+
+jq_safe() {
+  local data="$1" query="$2"
+  echo "$data" | jq -r "$query" 2>/dev/null || echo ""
+}
+
+write_header() {
+  echo "EMR Cluster Monitor Report - $(date '+%Y-%m-%d %H:%M:%S')" > "$REPORT_FILE"
+  echo "Region: $REGION" >> "$REPORT_FILE"
+  echo "Threshold (hours): $HOURS_OLD" >> "$REPORT_FILE"
+  echo "" >> "$REPORT_FILE"
+}
+
+send_slack_alert() {
+  local msg="$1"
+  if [[ -n "$SLACK_WEBHOOK" ]]; then
+    curl -s -X POST -H 'Content-type: application/json' --data "{\"text\": \"${msg//\"/\\\"}\"}" "$SLACK_WEBHOOK" >/dev/null || true
+  fi
+}
+
+check_dependencies() {
+  command -v aws >/dev/null 2>&1 || { echo "aws CLI not found in PATH" >&2; exit 2; }
+  command -v jq >/dev/null 2>&1 || { echo "jq not found in PATH" >&2; exit 2; }
+  command -v curl >/dev/null 2>&1 || { echo "curl not found in PATH" >&2; exit 2; }
+}
+
+main() {
+  check_dependencies
+  write_header
+
+  clusters_json=$(aws emr list-clusters $PROFILE_OPT --region "$REGION" --cluster-states RUNNING WAITING --output json 2>/dev/null || echo '{}')
+  if [[ -z "$(echo "$clusters_json" | jq -r '.Clusters | length')" || "$(echo "$clusters_json" | jq -r '.Clusters | length')" == "0" ]]; then
+    log_message "No RUNNING or WAITING EMR clusters found in $REGION"
+    echo "No RUNNING or WAITING EMR clusters found." >> "$REPORT_FILE"
+    exit 0
+  fi
+
+  found=0
+  echo "Clusters checked:" >> "$REPORT_FILE"
+  echo "-----------------" >> "$REPORT_FILE"
+
+  echo "$clusters_json" | jq -c '.Clusters[]' | while read -r cluster; do
+    id=$(jq -r '.Id' <<<"$cluster")
+    name=$(jq -r '.Name' <<<"$cluster")
+
+    desc_json=$(aws emr describe-cluster $PROFILE_OPT --cluster-id "$id" --region "$REGION" --output json 2>/dev/null || echo '{}')
+    state=$(jq -r '.Cluster.Status.State' <<<"$desc_json" 2>/dev/null || echo 'UNKNOWN')
+    creation=$(jq -r '.Cluster.Status.Timeline.CreationDateTime' <<<"$desc_json" 2>/dev/null || echo '')
+    if [[ -z "$creation" || "$creation" == "null" ]]; then
+      created_ts=0
+      age_hours=0
+    else
+      created_ts=$(date -d "$creation" +%s)
+      age_hours=$(( (NOW_TS - created_ts) / 3600 ))
+    fi
+
+    steps_json=$(aws emr list-steps $PROFILE_OPT --cluster-id "$id" --region "$REGION" --output json 2>/dev/null || echo '{}')
+    steps_count=$(jq -r '.Steps | length' <<<"$steps_json" 2>/dev/null || echo '0')
+
+    note=""
+    if [[ "$state" == "WAITING" || "$state" == "RUNNING" ]]; then
+      if [[ "$steps_count" -eq 0 ]]; then
+        note="No steps found"
+      fi
+      if [[ "$age_hours" -ge "$HOURS_OLD" ]]; then
+        if [[ -n "$note" ]]; then
+          note="$note; Older than ${HOURS_OLD}h (age=${age_hours}h)"
+        else
+          note="Older than ${HOURS_OLD}h (age=${age_hours}h)"
+        fi
+      fi
+    fi
+
+    if [[ -n "$note" ]]; then
+      found=1
+      echo "- ClusterId: $id" >> "$REPORT_FILE"
+      echo "  Name: $name" >> "$REPORT_FILE"
+      echo "  State: $state" >> "$REPORT_FILE"
+      echo "  AgeHours: ${age_hours}" >> "$REPORT_FILE"
+      echo "  StepsCount: ${steps_count}" >> "$REPORT_FILE"
+      echo "  Note: $note" >> "$REPORT_FILE"
+      echo "" >> "$REPORT_FILE"
+      log_message "Issue found for EMR cluster $id ($name): $note"
+    else
+      echo "- $id ($name): OK (state=$state, steps=$steps_count, age=${age_hours}h)" >> "$REPORT_FILE"
+    fi
+  done
+
+  if [[ "$found" -ne 0 ]]; then
+    alert_msg="EMR monitor: issues found; see $REPORT_FILE"
+    send_slack_alert "$alert_msg"
+    log_message "$alert_msg"
+    cat "$REPORT_FILE"
+    exit 0
+  else
+    log_message "EMR monitor: no problematic clusters found"
+    echo "No problematic EMR clusters found." >> "$REPORT_FILE"
+    exit 0
+  fi
+}
+
+main "$@"
+#!/usr/bin/env bash
+set -euo pipefail
+
 # AWS EMR Cluster Monitor
 # Checks for long-running or idle EMR clusters and optionally posts to Slack.
 
