@@ -1,6 +1,96 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+LOG_FILE="/var/log/aws-emr-cluster-monitor.log"
+REPORT_FILE="/tmp/emr-cluster-monitor-$(date +%Y%m%d%H%M%S).txt"
+
+REGION="${AWS_REGION:-${REGION:-us-east-1}}"
+HOURS_OLD="${EMR_CLUSTER_OLD_HOURS:-24}"
+SLACK_WEBHOOK="${SLACK_WEBHOOK:-}"
+
+log_message() {
+  echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] $*"
+  echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] $*" >> "$LOG_FILE"
+}
+
+jq_safe() {
+  jq -r "$@" 2>/dev/null || true
+}
+
+write_header() {
+  echo "EMR Cluster Monitor Report - $(date -u)" > "$REPORT_FILE"
+  echo "Region: $REGION" >> "$REPORT_FILE"
+  echo "Threshold (hours): $HOURS_OLD" >> "$REPORT_FILE"
+  echo "" >> "$REPORT_FILE"
+}
+
+send_slack_alert() {
+  if [ -n "$SLACK_WEBHOOK" ]; then
+    payload=$(jq -n --arg t "$1" '{"text":$t}')
+    curl -s -X POST -H 'Content-type: application/json' --data "$payload" "$SLACK_WEBHOOK" || true
+  fi
+}
+
+main() {
+  write_header
+
+  clusters_json=$(aws emr list-clusters --cluster-states RUNNING WAITING --region "$REGION" --output json 2>/dev/null || echo '{"Clusters":[]}')
+  cluster_count=$(echo "$clusters_json" | jq '.Clusters | length')
+
+  if [ "$cluster_count" -eq 0 ]; then
+    echo "No RUNNING or WAITING EMR clusters found." >> "$REPORT_FILE"
+    log_message "No RUNNING/WAITING clusters in region $REGION"
+    exit 0
+  fi
+
+  echo "Found $cluster_count clusters in RUNNING/WAITING" >> "$REPORT_FILE"
+  echo "" >> "$REPORT_FILE"
+
+  stale_found=0
+
+  while IFS= read -r cid; do
+    desc=$(aws emr describe-cluster --cluster-id "$cid" --region "$REGION" --output json 2>/dev/null || echo '{}')
+    name=$(echo "$desc" | jq -r '.Cluster.Name // "<unknown>"')
+    state=$(echo "$desc" | jq -r '.Cluster.Status.State // "<unknown>"')
+    created=$(echo "$desc" | jq -r '.Cluster.Status.Timeline.CreationDateTime // "1970-01-01T00:00:00Z"')
+
+    created_epoch=0
+    if created_epoch=$(date -d "$created" +%s 2>/dev/null || true); then
+      :
+    else
+      created_epoch=0
+    fi
+
+    now_epoch=$(date +%s)
+    age_hours=$(( (now_epoch - created_epoch) / 3600 ))
+
+    steps_count=$(aws emr list-steps --cluster-id "$cid" --region "$REGION" --output json 2>/dev/null | jq '.Steps | length' 2>/dev/null || echo 0)
+
+    echo "Cluster: $name ($cid)" >> "$REPORT_FILE"
+    echo "State: $state" >> "$REPORT_FILE"
+    echo "Created: $created ($age_hours hours)" >> "$REPORT_FILE"
+    echo "Steps: $steps_count" >> "$REPORT_FILE"
+    echo "" >> "$REPORT_FILE"
+
+    if [ "$age_hours" -ge "$HOURS_OLD" ] && [ "$steps_count" -eq 0 ]; then
+      echo "ALERT: Cluster $cid ($name) has been $state for $age_hours hours with no steps." >> "$REPORT_FILE"
+      send_slack_alert "EMR Alert: Cluster $name ($cid) in $state for $age_hours hours with no steps."
+      stale_found=1
+    fi
+
+  done < <(echo "$clusters_json" | jq -r '.Clusters[].Id')
+
+  if [ "$stale_found" -eq 0 ]; then
+    echo "No stale clusters found (> $HOURS_OLD hours with no steps)." >> "$REPORT_FILE"
+  fi
+
+  log_message "EMR report written to $REPORT_FILE"
+}
+
+main "$@"
+#!/usr/bin/env bash
+set -euo pipefail
+
 REGION="${AWS_REGION:-${REGION:-us-east-1}}"
 SLACK_WEBHOOK="${SLACK_WEBHOOK:-}"
 HOURS_THRESHOLD="${HOURS_THRESHOLD:-24}"
