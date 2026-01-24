@@ -2,6 +2,85 @@
 set -euo pipefail
 
 REGION="${AWS_REGION:-${REGION:-us-east-1}}"
+SLACK_WEBHOOK="${SLACK_WEBHOOK:-}"
+HOURS_THRESHOLD="${HOURS_THRESHOLD:-24}"
+TMP_REPORT="/tmp/aws-emr-cluster-monitor-$(date +%s).txt"
+
+log_message() {
+  echo "[$(date +'%Y-%m-%dT%H:%M:%S%z')] $*"
+}
+
+jq_safe() {
+  echo "$1" | jq -r "$2" 2>/dev/null || echo ""
+}
+
+write_header() {
+  echo "EMR cluster monitor run: $(date -u)" > "$TMP_REPORT"
+}
+
+send_slack_alert() {
+  if [ -z "$SLACK_WEBHOOK" ]; then
+    return 0
+  fi
+  payload=$(jq -n --arg text "$1" '{"text":$text}')
+  curl -s -X POST -H 'Content-type: application/json' --data "$payload" "$SLACK_WEBHOOK" >/dev/null || true
+}
+
+main() {
+  write_header
+  log_message "Checking EMR clusters in region $REGION"
+
+  cluster_ids_json=$(aws emr list-clusters --region "$REGION" --cluster-states RUNNING WAITING --query 'Clusters[].Id' --output json 2>/dev/null || echo "[]")
+  if [ "$cluster_ids_json" = "[]" ]; then
+    log_message "No RUNNING or WAITING clusters found"
+    exit 0
+  fi
+
+  now=$(date +%s)
+  alerts=()
+
+  for id in $(echo "$cluster_ids_json" | jq -r '.[]'); do
+    desc=$(aws emr describe-cluster --region "$REGION" --cluster-id "$id" --output json 2>/dev/null || echo "{}")
+    state=$(echo "$desc" | jq -r '.Cluster.Status.State // empty')
+    name=$(echo "$desc" | jq -r '.Cluster.Name // empty')
+    created=$(echo "$desc" | jq -r '.Cluster.Status.Timeline.CreationDateTime // empty')
+    if [ -z "$created" ] || [ "$created" = "null" ]; then
+      continue
+    fi
+
+    # convert creation time to epoch
+    created_ts=$(date -d "$created" +%s 2>/dev/null || echo 0)
+    if [ "$created_ts" -eq 0 ]; then
+      continue
+    fi
+    age_hours=$(( (now - created_ts) / 3600 ))
+
+    steps_count=$(aws emr list-steps --region "$REGION" --cluster-id "$id" --query 'length(Steps)' --output text 2>/dev/null || echo 0)
+    steps_count=${steps_count:-0}
+
+    if { [ "$state" = "WAITING" ] || [ "$state" = "RUNNING" ]; } && [ "$steps_count" -eq 0 ] && [ "$age_hours" -ge "$HOURS_THRESHOLD" ]; then
+      msg="Cluster $id ($name) is $state, ${age_hours}h old, steps: ${steps_count}"
+      alerts+=("$msg")
+      echo "$msg" >> "$TMP_REPORT"
+    fi
+  done
+
+  if [ "${#alerts[@]}" -gt 0 ]; then
+    body="EMR clusters without steps older than ${HOURS_THRESHOLD}h:\n$(printf '%s\n' "${alerts[@]}")"
+    send_slack_alert "$body"
+    log_message "Found ${#alerts[@]} clusters requiring attention; Slack alert sent (if configured)"
+    exit 2
+  else
+    log_message "No problematic EMR clusters found"
+    exit 0
+  fi
+}
+
+main "$@"
+#!/usr/bin/env bash
+set -euo pipefail
+
+REGION="${AWS_REGION:-${REGION:-us-east-1}}"
 HOURS_OLD="${HOURS_OLD:-24}"
 SLACK_WEBHOOK="${SLACK_WEBHOOK:-}"
 PROFILE_OPT=""
