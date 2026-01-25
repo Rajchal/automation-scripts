@@ -1,3 +1,85 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+LOG_FILE="/var/log/aws-ssm-patch-compliance-monitor.log"
+REPORT_FILE="/tmp/ssm-patch-compliance-monitor-$(date +%Y%m%d%H%M%S).txt"
+
+REGION="${AWS_REGION:-${REGION:-us-east-1}}"
+MAX_RESULTS="${SSM_MAX_RESULTS:-100}"
+COMPLIANCE_THRESHOLD="${SSM_COMPLIANCE_THRESHOLD:-90}"
+SLACK_WEBHOOK="${SLACK_WEBHOOK:-}"
+
+log_message() {
+  echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] $*"
+  echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] $*" >> "$LOG_FILE"
+}
+
+send_slack_alert() {
+  if [ -n "$SLACK_WEBHOOK" ]; then
+    payload=$(jq -n --arg t "$1" '{"text":$t}')
+    curl -s -X POST -H 'Content-type: application/json' --data "$payload" "$SLACK_WEBHOOK" || true
+  fi
+}
+
+write_header() {
+  echo "SSM Patch Compliance Report - $(date -u)" > "$REPORT_FILE"
+  echo "Region: $REGION" >> "$REPORT_FILE"
+  echo "Compliance threshold: $COMPLIANCE_THRESHOLD%" >> "$REPORT_FILE"
+  echo "" >> "$REPORT_FILE"
+}
+
+calc_percent() {
+  local num=$1
+  local den=$2
+  if [ "$den" -eq 0 ]; then
+    echo 0
+  else
+    awk "BEGIN {printf \"%.0f\", ($num / $den) * 100}"
+  fi
+}
+
+main() {
+  write_header
+
+  states_json=$(aws ssm describe-instance-patch-states --max-items "$MAX_RESULTS" --region "$REGION" --output json 2>/dev/null || echo '{"InstancePatchStates":[]}')
+  entries=$(echo "$states_json" | jq -c '.InstancePatchStates[]?')
+
+  if [ -z "$entries" ]; then
+    echo "No SSM patch state data found." >> "$REPORT_FILE"
+    log_message "No SSM patch states in region $REGION"
+    exit 0
+  fi
+
+  total=0
+  noncompliant=0
+
+  echo "$states_json" | jq -c '.InstancePatchStates[]?' | while read -r item; do
+    total=$((total+1))
+    instance_id=$(echo "$item" | jq -r '.InstanceId // "<no-id>"')
+    missing=$(echo "$item" | jq -r '.MissingCount // 0')
+    failed=$(echo "$item" | jq -r '.FailedCount // 0')
+    installed=$(echo "$item" | jq -r '.InstalledCount // 0')
+    installed_other=$(echo "$item" | jq -r '.InstalledOtherCount // 0')
+
+    denom=$((installed + missing + failed + installed_other))
+    pct=$(calc_percent "$installed" "$denom")
+
+    echo "Instance: $instance_id" >> "$REPORT_FILE"
+    echo "Installed: $installed, Missing: $missing, Failed: $failed, InstalledOther: $installed_other" >> "$REPORT_FILE"
+    echo "Compliance: $pct%" >> "$REPORT_FILE"
+    echo "" >> "$REPORT_FILE"
+
+    if [ "$missing" -gt 0 ] || [ "$failed" -gt 0 ] || [ "$pct" -lt "$COMPLIANCE_THRESHOLD" ]; then
+      send_slack_alert "SSM Patch Alert: Instance $instance_id compliance=$pct% missing=$missing failed=$failed"
+      noncompliant=$((noncompliant+1))
+    fi
+  done
+
+  echo "Summary: total_instances=$total, noncompliant=$noncompliant" >> "$REPORT_FILE"
+  log_message "SSM patch report written to $REPORT_FILE (total=$total, noncompliant=$noncompliant)"
+}
+
+main "$@"
 #!/bin/bash
 
 ################################################################################
