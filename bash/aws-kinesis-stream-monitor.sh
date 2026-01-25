@@ -1,3 +1,84 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+LOG_FILE="/var/log/aws-kinesis-stream-monitor.log"
+REPORT_FILE="/tmp/kinesis-stream-monitor-$(date +%Y%m%d%H%M%S).txt"
+
+REGION="${AWS_REGION:-${REGION:-us-east-1}}"
+MAX_STREAMS="${KINESIS_MAX_STREAMS:-50}"
+IDLE_MINUTES="${KINESIS_IDLE_MINUTES:-60}"
+SLACK_WEBHOOK="${SLACK_WEBHOOK:-}"
+
+log_message() {
+  echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] $*"
+  echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] $*" >> "$LOG_FILE"
+}
+
+send_slack_alert() {
+  if [ -n "$SLACK_WEBHOOK" ]; then
+    payload=$(jq -n --arg t "$1" '{"text":$t}')
+    curl -s -X POST -H 'Content-type: application/json' --data "$payload" "$SLACK_WEBHOOK" || true
+  fi
+}
+
+write_header() {
+  echo "Kinesis Stream Monitor Report - $(date -u)" > "$REPORT_FILE"
+  echo "Region: $REGION" >> "$REPORT_FILE"
+  echo "Max streams: $MAX_STREAMS" >> "$REPORT_FILE"
+  echo "Idle minutes threshold: $IDLE_MINUTES" >> "$REPORT_FILE"
+  echo "" >> "$REPORT_FILE"
+}
+
+main() {
+  write_header
+
+  streams_json=$(aws kinesis list-streams --limit "$MAX_STREAMS" --region "$REGION" --output json 2>/dev/null || echo '{"StreamNames":[]}')
+  streams=$(echo "$streams_json" | jq -r '.StreamNames[]?')
+
+  if [ -z "$streams" ]; then
+    echo "No Kinesis streams found." >> "$REPORT_FILE"
+    log_message "No Kinesis streams in region $REGION"
+    exit 0
+  fi
+
+  now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  start_time=$(date -u -d "$IDLE_MINUTES minutes ago" +%Y-%m-%dT%H:%M:%SZ)
+
+  idle_found=0
+  total=0
+
+  for s in $streams; do
+    total=$((total+1))
+    desc=$(aws kinesis describe-stream --stream-name "$s" --region "$REGION" --output json 2>/dev/null || echo '{}')
+    status=$(echo "$desc" | jq -r '.StreamDescription.StreamStatus // "<unknown>"')
+    shard_count=$(echo "$desc" | jq -r '.StreamDescription.Shards | length // 0')
+
+    # Query CloudWatch for IncomingRecords for the stream
+    cw=$(aws cloudwatch get-metric-statistics --namespace AWS/Kinesis --metric-name IncomingRecords --dimensions Name=StreamName,Value="$s" --start-time "$start_time" --end-time "$now" --period 60 --statistics Sum --region "$REGION" --output json 2>/dev/null || echo '{"Datapoints":[]}')
+    records_sum=$(echo "$cw" | jq -r '[.Datapoints[].Sum] | add // 0')
+
+    echo "Stream: $s" >> "$REPORT_FILE"
+    echo "Status: $status" >> "$REPORT_FILE"
+    echo "Shards: $shard_count" >> "$REPORT_FILE"
+    echo "IncomingRecords (last $IDLE_MINUTES min): $records_sum" >> "$REPORT_FILE"
+    echo "" >> "$REPORT_FILE"
+
+    if [ "$(printf '%s' "$records_sum" | awk '{print ($1 == "null" ? 0 : $1)}')" = "null" ]; then
+      records_sum=0
+    fi
+
+    # If there were no records in the window, alert
+    if [ "$(echo "$records_sum" | awk '{print ($1+0) }')" -eq 0 ]; then
+      send_slack_alert "Kinesis Alert: Stream $s in $REGION has no IncomingRecords in the last $IDLE_MINUTES minutes (status=$status, shards=$shard_count)."
+      idle_found=1
+    fi
+  done
+
+  echo "Summary: total_streams=$total, idle_found=$idle_found" >> "$REPORT_FILE"
+  log_message "Kinesis report written to $REPORT_FILE (total=$total, idle_found=$idle_found)"
+}
+
+main "$@"
 #!/bin/bash
 
 ################################################################################
