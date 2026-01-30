@@ -1,3 +1,80 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+LOG_FILE="/var/log/aws-acm-certificate-auditor.log"
+REPORT_FILE="/tmp/acm-certificate-auditor-$(date +%Y%m%d%H%M%S).txt"
+
+REGION="${AWS_REGION:-${REGION:-us-east-1}}"
+EXPIRY_DAYS="${ACM_EXPIRY_DAYS:-30}"
+SLACK_WEBHOOK="${SLACK_WEBHOOK:-}"
+
+log_message() {
+  echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] $*"
+  echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] $*" >> "$LOG_FILE"
+}
+
+send_slack_alert() {
+  if [ -n "$SLACK_WEBHOOK" ]; then
+    payload=$(jq -n --arg t "$1" '{"text":$t}')
+    curl -s -X POST -H 'Content-type: application/json' --data "$payload" "$SLACK_WEBHOOK" || true
+  fi
+}
+
+write_header() {
+  echo "ACM Certificate Auditor - $(date -u)" > "$REPORT_FILE"
+  echo "Region: $REGION" >> "$REPORT_FILE"
+  echo "Expiry threshold (days): $EXPIRY_DAYS" >> "$REPORT_FILE"
+  echo "" >> "$REPORT_FILE"
+}
+
+main() {
+  write_header
+
+  certs=$(aws acm list-certificates --region "$REGION" --output json 2>/dev/null || echo '{"CertificateSummaryList":[]}')
+  ids=$(echo "$certs" | jq -r '.CertificateSummaryList[]?.CertificateArn')
+
+  if [ -z "$ids" ]; then
+    echo "No ACM certificates found." >> "$REPORT_FILE"
+    log_message "No ACM certificates in region $REGION"
+    exit 0
+  fi
+
+  now_epoch=$(date -u +%s)
+  warn_epoch=$((now_epoch + EXPIRY_DAYS * 24 * 3600))
+
+  for arn in $ids; do
+    detail=$(aws acm describe-certificate --certificate-arn "$arn" --region "$REGION" --output json 2>/dev/null || echo '{}')
+    domain=$(echo "$detail" | jq -r '.Certificate.DomainName // "<unknown>"')
+    not_after=$(echo "$detail" | jq -r '.Certificate.NotAfter // empty')
+    status=$(echo "$detail" | jq -r '.Certificate.Status // "<unknown>"')
+    domain_validation=$(echo "$detail" | jq -r '.Certificate.DomainValidationOptions[]? | "\(.DomainName):\(.ValidationStatus)"' | paste -sd"," -)
+
+    not_after_epoch=0
+    if [ -n "$not_after" ]; then
+      not_after_epoch=$(date -d "$not_after" +%s 2>/dev/null || echo 0)
+    fi
+
+    echo "Cert: $arn" >> "$REPORT_FILE"
+    echo "Domain: $domain" >> "$REPORT_FILE"
+    echo "Status: $status" >> "$REPORT_FILE"
+    echo "NotAfter: $not_after" >> "$REPORT_FILE"
+    echo "DomainValidation: $domain_validation" >> "$REPORT_FILE"
+    echo "" >> "$REPORT_FILE"
+
+    if [ "$not_after_epoch" -ne 0 ] && [ "$not_after_epoch" -le "$warn_epoch" ]; then
+      days_left=$(( (not_after_epoch - now_epoch) / 86400 ))
+      send_slack_alert "ACM Alert: Certificate $domain ($arn) expires in ${days_left} days (status=$status)."
+    fi
+
+    if echo "$domain_validation" | grep -q -E 'PENDING|FAILED'; then
+      send_slack_alert "ACM Alert: Certificate $domain ($arn) has domain validation issues: $domain_validation"
+    fi
+  done
+
+  log_message "ACM auditor written to $REPORT_FILE"
+}
+
+main "$@"
 #!/bin/bash
 
 ################################################################################
