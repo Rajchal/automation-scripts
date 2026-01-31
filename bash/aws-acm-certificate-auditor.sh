@@ -5,6 +5,114 @@ LOG_FILE="/var/log/aws-acm-certificate-auditor.log"
 REPORT_FILE="/tmp/acm-certificate-auditor-$(date +%Y%m%d%H%M%S).txt"
 
 REGION="${AWS_REGION:-${REGION:-us-east-1}}"
+EXPIRY_DAYS_THRESHOLD="${ACM_EXPIRY_DAYS:-30}"
+MAX_RESULTS="${ACM_MAX_RESULTS:-100}"
+SLACK_WEBHOOK="${SLACK_WEBHOOK:-}"
+
+log_message() {
+  echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] $*"
+  echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] $*" >> "$LOG_FILE"
+}
+
+send_slack_alert() {
+  if [ -n "$SLACK_WEBHOOK" ]; then
+    payload=$(jq -n --arg t "$1" '{"text":$t}')
+    curl -s -X POST -H 'Content-type: application/json' --data "$payload" "$SLACK_WEBHOOK" || true
+  fi
+}
+
+write_header() {
+  echo "ACM Certificate Auditor Report - $(date -u)" > "$REPORT_FILE"
+  echo "Region: $REGION" >> "$REPORT_FILE"
+  echo "Expiry threshold (days): $EXPIRY_DAYS_THRESHOLD" >> "$REPORT_FILE"
+  echo "" >> "$REPORT_FILE"
+}
+
+days_until() {
+  # arg: RFC3339 date
+  target=$1
+  if [ -z "$target" ] || [ "$target" = "null" ]; then
+    echo 99999
+    return
+  fi
+  now=$(date -u +%s)
+  then_epoch=$(date -d "$target" +%s 2>/dev/null || echo 0)
+  if [ "$then_epoch" -le 0 ]; then
+    echo 99999
+    return
+  fi
+  echo $(( (then_epoch - now) / 86400 ))
+}
+
+main() {
+  write_header
+
+  certs_json=$(aws acm list-certificates --max-items "$MAX_RESULTS" --region "$REGION" --output json 2>/dev/null || echo '{"CertificateSummaryList":[]}')
+  ids=$(echo "$certs_json" | jq -r '.CertificateSummaryList[]?.CertificateArn')
+
+  if [ -z "$ids" ]; then
+    echo "No ACM certificates found." >> "$REPORT_FILE"
+    log_message "No ACM certificates in region $REGION"
+    exit 0
+  fi
+
+  total=0
+  alerts=0
+
+  for arn in $ids; do
+    total=$((total+1))
+    detail=$(aws acm describe-certificate --certificate-arn "$arn" --region "$REGION" --output json 2>/dev/null || echo '{}')
+    domain=$(echo "$detail" | jq -r '.Certificate.DomainName // "<unknown>"')
+    not_after=$(echo "$detail" | jq -r '.Certificate.NotAfter // empty')
+    status=$(echo "$detail" | jq -r '.Certificate.Status // "<unknown>"')
+    type=$(echo "$detail" | jq -r '.Certificate.Type // "<unknown>"')
+    validation=$(echo "$detail" | jq -c '.Certificate.DomainValidationOptions // []')
+
+    days=$(days_until "$not_after")
+
+    echo "Certificate: $arn" >> "$REPORT_FILE"
+    echo "Domain: $domain" >> "$REPORT_FILE"
+    echo "Type: $type" >> "$REPORT_FILE"
+    echo "Status: $status" >> "$REPORT_FILE"
+    echo "Expires: ${not_after:-<unknown>} (in ${days} days)" >> "$REPORT_FILE"
+
+    if [ -n "$validation" ] && [ "$validation" != "[]" ]; then
+      echo "$validation" | jq -r '.[] | "Validation: domain=" + (.DomainName // "") + " status=" + (.ValidationStatus // "")' >> "$REPORT_FILE"
+    fi
+
+    echo "" >> "$REPORT_FILE"
+
+    # Alert conditions
+    if [ "$days" -le "$EXPIRY_DAYS_THRESHOLD" ]; then
+      send_slack_alert "ACM Alert: Certificate for $domain expires in ${days} days (ARN: $arn)."
+      alerts=$((alerts+1))
+    fi
+
+    # Check validation statuses for visible failures
+    bad_validation=$(echo "$detail" | jq -r '.Certificate.DomainValidationOptions[]?.ValidationStatus // empty' | grep -E "FAILED|PENDING_VALIDATION" || true)
+    if [ -n "$bad_validation" ]; then
+      send_slack_alert "ACM Alert: Certificate $arn domain validation statuses: $(echo "$bad_validation" | tr '\n' ',' )"
+      alerts=$((alerts+1))
+    fi
+
+    if [ "$status" = "EXPIRED" ] || [ "$status" = "INACTIVE" ]; then
+      send_slack_alert "ACM Alert: Certificate $arn has status $status for domain $domain"
+      alerts=$((alerts+1))
+    fi
+  done
+
+  echo "Summary: total_certificates=$total, alerts=$alerts" >> "$REPORT_FILE"
+  log_message "ACM report written to $REPORT_FILE (total=$total, alerts=$alerts)"
+}
+
+main "$@"
+#!/usr/bin/env bash
+set -euo pipefail
+
+LOG_FILE="/var/log/aws-acm-certificate-auditor.log"
+REPORT_FILE="/tmp/acm-certificate-auditor-$(date +%Y%m%d%H%M%S).txt"
+
+REGION="${AWS_REGION:-${REGION:-us-east-1}}"
 EXPIRY_DAYS="${ACM_EXPIRY_DAYS:-30}"
 SLACK_WEBHOOK="${SLACK_WEBHOOK:-}"
 
