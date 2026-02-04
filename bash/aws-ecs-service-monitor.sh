@@ -5,6 +5,118 @@ LOG_FILE="/var/log/aws-ecs-service-monitor.log"
 REPORT_FILE="/tmp/ecs-service-monitor-$(date +%Y%m%d%H%M%S).txt"
 
 REGION="${AWS_REGION:-${REGION:-us-east-1}}"
+MAX_SERVICES_PER_CLUSTER="${ECS_MAX_SERVICES:-200}"
+SLACK_WEBHOOK="${SLACK_WEBHOOK:-}"
+
+log_message() {
+  echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] $*"
+  echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] $*" >> "$LOG_FILE"
+}
+
+send_slack_alert() {
+  if [ -n "$SLACK_WEBHOOK" ]; then
+    payload=$(jq -n --arg t "$1" '{"text":$t}')
+    curl -s -X POST -H 'Content-type: application/json' --data "$payload" "$SLACK_WEBHOOK" || true
+  fi
+}
+
+write_header() {
+  echo "ECS Service Monitor Report - $(date -u)" > "$REPORT_FILE"
+  echo "Region: $REGION" >> "$REPORT_FILE"
+  echo "" >> "$REPORT_FILE"
+}
+
+check_service() {
+  local cluster_arn="$1"
+  local service_arn="$2"
+
+  svc_json=$(aws ecs describe-services --cluster "$cluster_arn" --services "$service_arn" --region "$REGION" --output json 2>/dev/null || echo '{"services":[]}')
+  svc=$(echo "$svc_json" | jq -r '.services[0] // {}')
+  name=$(echo "$svc" | jq -r '.serviceName // "<unknown>"')
+  desired=$(echo "$svc" | jq -r '.desiredCount // 0')
+  running=$(echo "$svc" | jq -r '.runningCount // 0')
+  pending=$(echo "$svc" | jq -r '.pendingCount // 0')
+  deployments=$(echo "$svc" | jq -c '.deployments // []')
+  events=$(echo "$svc" | jq -c '.events // []')
+
+  echo "Service: $name" >> "$REPORT_FILE"
+  echo "  Desired: $desired" >> "$REPORT_FILE"
+  echo "  Running: $running" >> "$REPORT_FILE"
+  echo "  Pending: $pending" >> "$REPORT_FILE"
+
+  # Check mismatch
+  if [ "$running" -lt "$desired" ]; then
+    send_slack_alert "ECS Alert: Service $name has running=$running less than desired=$desired in cluster $cluster_arn"
+  fi
+
+  if [ "$pending" -gt 0 ]; then
+    send_slack_alert "ECS Alert: Service $name has $pending pending tasks in cluster $cluster_arn"
+  fi
+
+  # Check recent events for unhealthy/failures
+  echo "$events" | jq -r '.[]? | .message' | while read -r msg; do
+    if echo "$msg" | grep -Ei "fail|error|unhealthy|stopped|terminated|insufficient" >/dev/null 2>&1; then
+      send_slack_alert "ECS Event: Service $name in cluster $cluster_arn: $msg"
+    fi
+  done
+
+  # Check deployments for long-running primary deployment not completed
+  echo "$deployments" | jq -c '.[]?' | while read -r d; do
+    status=$(echo "$d" | jq -r '.status // ""')
+    desiredCount=$(echo "$d" | jq -r '.desiredCount // 0')
+    runningCount=$(echo "$d" | jq -r '.runningCount // 0')
+    if [ "$runningCount" -lt "$desiredCount" ]; then
+      send_slack_alert "ECS Deployment: Service $name in cluster $cluster_arn deployment status=$status running=$runningCount desired=$desiredCount"
+    fi
+  done
+
+  echo "" >> "$REPORT_FILE"
+}
+
+main() {
+  write_header
+
+  clusters_json=$(aws ecs list-clusters --region "$REGION" --output json 2>/dev/null || echo '{"clusterArns":[]}')
+  clusters=$(echo "$clusters_json" | jq -r '.clusterArns[]?')
+
+  if [ -z "$clusters" ]; then
+    echo "No ECS clusters found." >> "$REPORT_FILE"
+    log_message "No ECS clusters in region $REGION"
+    exit 0
+  fi
+
+  echo "Found clusters:" >> "$REPORT_FILE"
+  for c in $clusters; do
+    echo "  $c" >> "$REPORT_FILE"
+  done
+  echo "" >> "$REPORT_FILE"
+
+  for cluster in $clusters; do
+    services_json=$(aws ecs list-services --cluster "$cluster" --max-results "$MAX_SERVICES_PER_CLUSTER" --region "$REGION" --output json 2>/dev/null || echo '{"serviceArns":[]}')
+    services=$(echo "$services_json" | jq -r '.serviceArns[]?')
+    if [ -z "$services" ]; then
+      echo "Cluster $cluster: no services" >> "$REPORT_FILE"
+      continue
+    fi
+
+    echo "Checking cluster: $cluster" >> "$REPORT_FILE"
+    for s in $services; do
+      check_service "$cluster" "$s"
+    done
+    echo "" >> "$REPORT_FILE"
+  done
+
+  log_message "ECS service report written to $REPORT_FILE"
+}
+
+main "$@"
+#!/usr/bin/env bash
+set -euo pipefail
+
+LOG_FILE="/var/log/aws-ecs-service-monitor.log"
+REPORT_FILE="/tmp/ecs-service-monitor-$(date +%Y%m%d%H%M%S).txt"
+
+REGION="${AWS_REGION:-${REGION:-us-east-1}}"
 SLACK_WEBHOOK="${SLACK_WEBHOOK:-}"
 SERVICE_FAIL_THRESHOLD="${ECS_SERVICE_FAIL_THRESHOLD:-3}"
 
