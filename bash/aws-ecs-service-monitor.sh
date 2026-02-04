@@ -5,6 +5,110 @@ LOG_FILE="/var/log/aws-ecs-service-monitor.log"
 REPORT_FILE="/tmp/ecs-service-monitor-$(date +%Y%m%d%H%M%S).txt"
 
 REGION="${AWS_REGION:-${REGION:-us-east-1}}"
+SERVICE_FAILURE_THRESHOLD="${ECS_SERVICE_FAILURE_THRESHOLD:-3}"
+SLACK_WEBHOOK="${SLACK_WEBHOOK:-}"
+
+log_message() {
+  echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] $*"
+  echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] $*" >> "$LOG_FILE"
+}
+
+send_slack_alert() {
+  if [ -n "$SLACK_WEBHOOK" ]; then
+    payload=$(jq -n --arg t "$1" '{"text":$t}')
+    curl -s -X POST -H 'Content-type: application/json' --data "$payload" "$SLACK_WEBHOOK" || true
+  fi
+}
+
+write_header() {
+  echo "ECS Service Monitor Report - $(date -u)" > "$REPORT_FILE"
+  echo "Region: $REGION" >> "$REPORT_FILE"
+  echo "Service failure alert threshold: $SERVICE_FAILURE_THRESHOLD events" >> "$REPORT_FILE"
+  echo "" >> "$REPORT_FILE"
+}
+
+check_service() {
+  local cluster_arn="$1"
+  local service_arn="$2"
+
+  svc_json=$(aws ecs describe-services --cluster "$cluster_arn" --services "$service_arn" --region "$REGION" --output json 2>/dev/null || echo '{}')
+  svc=$(echo "$svc_json" | jq -r '.services[0] // {}')
+  if [ "$svc" = "{}" ]; then
+    echo "  Service: $service_arn - unable to describe" >> "$REPORT_FILE"
+    return
+  fi
+
+  name=$(echo "$svc" | jq -r '.serviceName // "<unknown>"')
+  desired=$(echo "$svc" | jq -r '.desiredCount // 0')
+  running=$(echo "$svc" | jq -r '.runningCount // 0')
+  pending=$(echo "$svc" | jq -r '.pendingCount // 0')
+  deployments=$(echo "$svc" | jq -r '.deployments | length')
+  # Check recent events for failures
+  events_count=$(echo "$svc" | jq -r '.events | length')
+
+  echo "Service: $name" >> "$REPORT_FILE"
+  echo "  Desired: $desired, Running: $running, Pending: $pending, Deployments: $deployments" >> "$REPORT_FILE"
+
+  # Summarize recent event messages and detect error keywords
+  if [ "$events_count" -gt 0 ]; then
+    echo "  Recent events:" >> "$REPORT_FILE"
+    echo "$svc" | jq -r '.events[] | "    - [\(.createdAt)] \(.message)"' >> "$REPORT_FILE"
+    err_count=$(echo "$svc" | jq -r '.events[] | select(.message|test("fail|error|unhealthy|unable|Stopped|ERROR"; "i")) | length' 2>/dev/null || echo 0)
+  else
+    err_count=0
+  fi
+
+  echo "" >> "$REPORT_FILE"
+
+  if [ "$running" -lt "$desired" ]; then
+    send_slack_alert "ECS Alert: Service $name in cluster $(basename $cluster_arn) has running=$running desired=$desired"
+  fi
+
+  if [ "$err_count" -ge "$SERVICE_FAILURE_THRESHOLD" ]; then
+    send_slack_alert "ECS Alert: Service $name in cluster $(basename $cluster_arn) has $err_count recent error events"
+  fi
+}
+
+main() {
+  write_header
+
+  clusters_json=$(aws ecs list-clusters --region "$REGION" --output json 2>/dev/null || echo '{"clusterArns":[]}')
+  clusters=$(echo "$clusters_json" | jq -r '.clusterArns[]?')
+
+  if [ -z "$clusters" ]; then
+    echo "No ECS clusters found." >> "$REPORT_FILE"
+    log_message "No ECS clusters in region $REGION"
+    exit 0
+  fi
+
+  echo "Checking ECS clusters and services..." >> "$REPORT_FILE"
+  for c in $clusters; do
+    echo "Cluster: $(basename $c) ($c)" >> "$REPORT_FILE"
+    svc_list_json=$(aws ecs list-services --cluster "$c" --region "$REGION" --output json 2>/dev/null || echo '{"serviceArns":[]}')
+    services=$(echo "$svc_list_json" | jq -r '.serviceArns[]?')
+    if [ -z "$services" ]; then
+      echo "  No services in cluster." >> "$REPORT_FILE"
+      echo "" >> "$REPORT_FILE"
+      continue
+    fi
+
+    for s in $services; do
+      check_service "$c" "$s"
+    done
+    echo "" >> "$REPORT_FILE"
+  done
+
+  log_message "ECS service report written to $REPORT_FILE"
+}
+
+main "$@"
+#!/usr/bin/env bash
+set -euo pipefail
+
+LOG_FILE="/var/log/aws-ecs-service-monitor.log"
+REPORT_FILE="/tmp/ecs-service-monitor-$(date +%Y%m%d%H%M%S).txt"
+
+REGION="${AWS_REGION:-${REGION:-us-east-1}}"
 MAX_SERVICES="${ECS_MAX_SERVICES:-200}"
 UNHEALTHY_THRESHOLD="${ECS_UNHEALTHY_THRESHOLD:-1}"
 SLACK_WEBHOOK="${SLACK_WEBHOOK:-}"
