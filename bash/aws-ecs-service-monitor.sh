@@ -5,6 +5,124 @@ LOG_FILE="/var/log/aws-ecs-service-monitor.log"
 REPORT_FILE="/tmp/ecs-service-monitor-$(date +%Y%m%d%H%M%S).txt"
 
 REGION="${AWS_REGION:-${REGION:-us-east-1}}"
+SLACK_WEBHOOK="${SLACK_WEBHOOK:-}"
+UNHEALTHY_TASK_THRESHOLD="${ECS_UNHEALTHY_TASK_THRESHOLD:-1}"
+
+log_message() {
+  echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] $*"
+  echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] $*" >> "$LOG_FILE"
+}
+
+send_slack_alert() {
+  if [ -z "$SLACK_WEBHOOK" ]; then
+    return
+  fi
+  payload=$(jq -n --arg t "$1" '{"text":$t}')
+  curl -s -X POST -H 'Content-type: application/json' --data "$payload" "$SLACK_WEBHOOK" || true
+}
+
+write_header() {
+  echo "ECS Service Monitor Report - $(date -u)" > "$REPORT_FILE"
+  echo "Region: $REGION" >> "$REPORT_FILE"
+  echo "Unhealthy task alert threshold: $UNHEALTHY_TASK_THRESHOLD" >> "$REPORT_FILE"
+  echo "" >> "$REPORT_FILE"
+}
+
+count_unhealthy_tasks() {
+  # args: cluster arn, service arn
+  cluster_arn="$1"
+  service_arn="$2"
+
+  task_arns=$(aws ecs list-tasks --cluster "$cluster_arn" --service-name "$service_arn" --desired-status RUNNING --region "$REGION" --output json 2>/dev/null | jq -r '.taskArns[]?')
+  if [ -z "$task_arns" ]; then
+    echo 0
+    return
+  fi
+
+  # describe tasks in batches
+  unhealthy=0
+  for t in $task_arns; do
+    dt=$(aws ecs describe-tasks --cluster "$cluster_arn" --tasks "$t" --region "$REGION" --output json 2>/dev/null || echo '{}')
+    # Count container healthStatus == UNHEALTHY (if present)
+    cnt=$(echo "$dt" | jq -r '.tasks[]?.containers[]?.healthStatus? | select(.=="UNHEALTHY")' 2>/dev/null | wc -l || true)
+    if [ "$cnt" -gt 0 ]; then
+      unhealthy=$((unhealthy+cnt))
+    fi
+  done
+  echo "$unhealthy"
+}
+
+main() {
+  write_header
+
+  clusters_json=$(aws ecs list-clusters --region "$REGION" --output json 2>/dev/null || echo '{"clusterArns":[]}')
+  clusters=$(echo "$clusters_json" | jq -r '.clusterArns[]?')
+
+  if [ -z "$clusters" ]; then
+    echo "No ECS clusters found." >> "$REPORT_FILE"
+    log_message "No ECS clusters in region $REGION"
+    exit 0
+  fi
+
+  total_services=0
+  alert_count=0
+
+  for c in $clusters; do
+    echo "Cluster: $c" >> "$REPORT_FILE"
+    services_json=$(aws ecs list-services --cluster "$c" --region "$REGION" --output json 2>/dev/null || echo '{"serviceArns":[]}')
+    services=$(echo "$services_json" | jq -r '.serviceArns[]?')
+    if [ -z "$services" ]; then
+      echo "  No services in cluster." >> "$REPORT_FILE"
+      echo "" >> "$REPORT_FILE"
+      continue
+    fi
+
+    for s in $services; do
+      total_services=$((total_services+1))
+      desc=$(aws ecs describe-services --cluster "$c" --services "$s" --region "$REGION" --output json 2>/dev/null || echo '{"services":[]}')
+      svc=$(echo "$desc" | jq -r '.services[0] // {}')
+      name=$(echo "$svc" | jq -r '.serviceName // "<unknown>"')
+      desired=$(echo "$svc" | jq -r '.desiredCount // 0')
+      running=$(echo "$svc" | jq -r '.runningCount // 0')
+      pending=$(echo "$svc" | jq -r '.pendingCount // 0')
+      deployments=$(echo "$svc" | jq -r '.deployments | length')
+
+      echo "  Service: $name" >> "$REPORT_FILE"
+      echo "    Desired: $desired" >> "$REPORT_FILE"
+      echo "    Running: $running" >> "$REPORT_FILE"
+      echo "    Pending: $pending" >> "$REPORT_FILE"
+      echo "    Deployments: $deployments" >> "$REPORT_FILE"
+
+      if [ "$running" -lt "$desired" ]; then
+        echo "    ALERT: running ($running) < desired ($desired)" >> "$REPORT_FILE"
+        send_slack_alert "ECS Alert: Service $name in cluster $c has running=$running desired=$desired"
+        alert_count=$((alert_count+1))
+      fi
+
+      # Count unhealthy tasks via container health status when available
+      unhealthy_tasks=$(count_unhealthy_tasks "$c" "$s")
+      echo "    Unhealthy tasks (container health): $unhealthy_tasks" >> "$REPORT_FILE"
+      if [ "$unhealthy_tasks" -ge "$UNHEALTHY_TASK_THRESHOLD" ]; then
+        send_slack_alert "ECS Alert: Service $name in cluster $c has $unhealthy_tasks unhealthy container(s)"
+        alert_count=$((alert_count+1))
+      fi
+
+      echo "" >> "$REPORT_FILE"
+    done
+  done
+
+  echo "Summary: total_services=$total_services, alerts=$alert_count" >> "$REPORT_FILE"
+  log_message "ECS report written to $REPORT_FILE (total_services=$total_services, alerts=$alert_count)"
+}
+
+main "$@"
+#!/usr/bin/env bash
+set -euo pipefail
+
+LOG_FILE="/var/log/aws-ecs-service-monitor.log"
+REPORT_FILE="/tmp/ecs-service-monitor-$(date +%Y%m%d%H%M%S).txt"
+
+REGION="${AWS_REGION:-${REGION:-us-east-1}}"
 MAX_SERVICES_PER_CLUSTER="${ECS_MAX_SERVICES:-200}"
 SLACK_WEBHOOK="${SLACK_WEBHOOK:-}"
 
