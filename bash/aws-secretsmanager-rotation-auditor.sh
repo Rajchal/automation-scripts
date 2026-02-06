@@ -1,3 +1,92 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+LOG_FILE="/var/log/aws-secretsmanager-rotation-auditor.log"
+REPORT_FILE="/tmp/secretsmanager-rotation-auditor-$(date +%Y%m%d%H%M%S).txt"
+SLACK_WEBHOOK="${SLACK_WEBHOOK:-}"
+REGION="${AWS_REGION:-${REGION:-us-east-1}}"
+ROTATION_MAX_AGE_DAYS="${SECRETS_ROTATION_MAX_AGE_DAYS:-90}"
+
+log_message() {
+  echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] $*" | tee -a "$LOG_FILE"
+}
+
+send_slack_alert() {
+  if [ -n "$SLACK_WEBHOOK" ]; then
+    payload=$(jq -n --arg t "$1" '{"text":$t}')
+    curl -s -X POST -H 'Content-type: application/json' --data "$payload" "$SLACK_WEBHOOK" || true
+  fi
+}
+
+write_header() {
+  echo "AWS Secrets Manager Rotation Auditor Report - $(date -u)" > "$REPORT_FILE"
+  echo "Region: $REGION" >> "$REPORT_FILE"
+  echo "Rotation max age (days): $ROTATION_MAX_AGE_DAYS" >> "$REPORT_FILE"
+  echo "" >> "$REPORT_FILE"
+}
+
+check_secret() {
+  local arn="$1"
+  local name="$2"
+
+  echo "Secret: $name ($arn)" >> "$REPORT_FILE"
+
+  desc=$(aws secretsmanager describe-secret --secret-id "$arn" --output json 2>/dev/null || echo '{}')
+  rotation_enabled=$(echo "$desc" | jq -r '.RotationEnabled // false')
+  last_changed=$(echo "$desc" | jq -r '.LastChangedDate // .CreatedDate // empty')
+
+  if [ "$rotation_enabled" != "true" ]; then
+    echo "  ROTATION_DISABLED" >> "$REPORT_FILE"
+    send_slack_alert "SecretsManager Alert: Secret $name has rotation disabled"
+  else
+    echo "  Rotation enabled" >> "$REPORT_FILE"
+  fi
+
+  if [ -n "$last_changed" ] && [ "$last_changed" != "null" ]; then
+    # convert to epoch
+    last_epoch=$(date -d "$last_changed" +%s 2>/dev/null || true)
+    if [ -n "$last_epoch" ]; then
+      now=$(date +%s)
+      age_days=$(( (now - last_epoch) / 86400 ))
+      echo "  Last changed: $last_changed (age: ${age_days}d)" >> "$REPORT_FILE"
+      if [ "$age_days" -ge "$ROTATION_MAX_AGE_DAYS" ]; then
+        echo "  ROTATION_AGE_EXCEEDED: ${age_days}d >= ${ROTATION_MAX_AGE_DAYS}d" >> "$REPORT_FILE"
+        send_slack_alert "SecretsManager Alert: Secret $name last changed ${age_days} days ago (>= ${ROTATION_MAX_AGE_DAYS})"
+      fi
+    fi
+  fi
+
+  echo "" >> "$REPORT_FILE"
+}
+
+main() {
+  write_header
+
+  # paginate through secrets
+  next_token=""
+  while :; do
+    if [ -z "$next_token" ]; then
+      out=$(aws secretsmanager list-secrets --output json 2>/dev/null || echo '{"SecretList":[]}')
+    else
+      out=$(aws secretsmanager list-secrets --output json --starting-token "$next_token" 2>/dev/null || echo '{"SecretList":[]}')
+    fi
+
+    echo "$out" | jq -c '.SecretList[]? // empty' | while read -r s; do
+      sarn=$(echo "$s" | jq -r '.ARN')
+      sname=$(echo "$s" | jq -r '.Name')
+      check_secret "$sarn" "$sname"
+    done
+
+    next_token=$(echo "$out" | jq -r '.NextToken // empty')
+    if [ -z "$next_token" ]; then
+      break
+    fi
+  done
+
+  log_message "Secrets Manager rotation audit written to $REPORT_FILE"
+}
+
+main "$@"
 #!/bin/bash
 
 ################################################################################
