@@ -5,6 +5,76 @@ LOG_FILE="/var/log/aws-eip-unused-auditor.log"
 REPORT_FILE="/tmp/eip-unused-auditor-$(date +%Y%m%d%H%M%S).txt"
 
 REGION="${AWS_REGION:-${REGION:-us-east-1}}"
+SLACK_WEBHOOK="${SLACK_WEBHOOK:-}"
+ALERT_THRESHOLD="${EIP_ALERT_THRESHOLD:-1}"
+
+log_message() {
+  echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] $*"
+  echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] $*" >> "$LOG_FILE"
+}
+
+send_slack_alert() {
+  if [ -n "$SLACK_WEBHOOK" ]; then
+    payload=$(jq -n --arg t "$1" '{"text":$t}')
+    curl -s -X POST -H 'Content-type: application/json' --data "$payload" "$SLACK_WEBHOOK" || true
+  fi
+}
+
+write_header() {
+  echo "EIP Unused Auditor Report - $(date -u)" > "$REPORT_FILE"
+  echo "Region: $REGION" >> "$REPORT_FILE"
+  echo "Alert threshold (unattached count): $ALERT_THRESHOLD" >> "$REPORT_FILE"
+  echo "" >> "$REPORT_FILE"
+}
+
+main() {
+  write_header
+
+  addrs_json=$(aws ec2 describe-addresses --region "$REGION" --output json 2>/dev/null || echo '{"Addresses":[]}')
+  addrs=$(echo "$addrs_json" | jq -c '.Addresses[]?')
+
+  if [ -z "$addrs" ]; then
+    echo "No Elastic IPs found." >> "$REPORT_FILE"
+    log_message "No Elastic IPs in region $REGION"
+    exit 0
+  fi
+
+  unattached_count=0
+
+  echo "$addrs_json" | jq -c '.Addresses[]?' | while read -r a; do
+    public_ip=$(echo "$a" | jq -r '.PublicIp // "<unknown>"')
+    allocation_id=$(echo "$a" | jq -r '.AllocationId // empty')
+    association_id=$(echo "$a" | jq -r '.AssociationId // empty')
+    instance_id=$(echo "$a" | jq -r '.InstanceId // empty')
+    network_interface_id=$(echo "$a" | jq -r '.NetworkInterfaceId // empty')
+    domain=$(echo "$a" | jq -r '.Domain // "standard"')
+
+    if [ -z "$association_id" ] || [ "$association_id" = "null" ]; then
+      echo "Unattached EIP: $public_ip (allocation=$allocation_id domain=$domain)" >> "$REPORT_FILE"
+      echo "  InstanceId: ${instance_id:-<none>} NetworkInterfaceId: ${network_interface_id:-<none>}" >> "$REPORT_FILE"
+      echo "" >> "$REPORT_FILE"
+      unattached_count=$((unattached_count+1))
+    else
+      echo "Attached EIP: $public_ip -> assoc=$association_id instance=${instance_id:-<none>}" >> "$REPORT_FILE"
+    fi
+  done
+
+  if [ "$unattached_count" -ge "$ALERT_THRESHOLD" ]; then
+    send_slack_alert "EIP Alert: Found $unattached_count unattached Elastic IP(s) in $REGION. See $REPORT_FILE for details."
+  fi
+
+  echo "Summary: unattached_eips=$unattached_count" >> "$REPORT_FILE"
+  log_message "EIP auditor written to $REPORT_FILE (unattached=$unattached_count)"
+}
+
+main "$@"
+#!/usr/bin/env bash
+set -euo pipefail
+
+LOG_FILE="/var/log/aws-eip-unused-auditor.log"
+REPORT_FILE="/tmp/eip-unused-auditor-$(date +%Y%m%d%H%M%S).txt"
+
+REGION="${AWS_REGION:-${REGION:-us-east-1}}"
 DAYS_OLD="${EIP_UNUSED_DAYS:-30}"
 DRY_RUN="${EIP_RELEASE_DRY_RUN:-true}"
 SLACK_WEBHOOK="${SLACK_WEBHOOK:-}"
