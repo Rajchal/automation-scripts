@@ -1,3 +1,90 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+LOG_FILE="/var/log/aws-kms-key-rotation-auditor.log"
+REPORT_FILE="/tmp/kms-key-rotation-auditor-$(date +%Y%m%d%H%M%S).txt"
+SLACK_WEBHOOK="${SLACK_WEBHOOK:-}"
+REGION="${AWS_REGION:-${REGION:-us-east-1}}"
+
+log_message() { echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] $*" | tee -a "$LOG_FILE"; }
+
+send_slack_alert() {
+  if [ -n "$SLACK_WEBHOOK" ]; then
+    payload=$(jq -n --arg t "$1" '{"text":$t}')
+    curl -s -X POST -H 'Content-type: application/json' --data "$payload" "$SLACK_WEBHOOK" || true
+  fi
+}
+
+write_header() {
+  echo "AWS KMS Key Rotation & Policy Auditor - $(date -u)" > "$REPORT_FILE"
+  echo "Region: $REGION" >> "$REPORT_FILE"
+  echo "" >> "$REPORT_FILE"
+}
+
+check_key() {
+  local key_id="$1"
+  local key_meta
+  key_meta=$(aws kms describe-key --key-id "$key_id" --output json 2>/dev/null || echo '{}')
+  key_arn=$(echo "$key_meta" | jq -r '.KeyMetadata.Arn // ""')
+  key_state=$(echo "$key_meta" | jq -r '.KeyMetadata.KeyState // ""')
+  key_manager=$(echo "$key_meta" | jq -r '.KeyMetadata.KeyManager // ""')
+  key_desc=$(echo "$key_meta" | jq -r '.KeyMetadata.Description // ""')
+
+  echo "Key: $key_id ($key_arn)" >> "$REPORT_FILE"
+  echo "  State: $key_state Manager: $key_manager" >> "$REPORT_FILE"
+
+  if [ "$key_manager" = "AWS" ]; then
+    echo "  AWS-managed key (skipping rotation checks)" >> "$REPORT_FILE"
+    echo "" >> "$REPORT_FILE"
+    return
+  fi
+
+  # rotation status
+  rotation_enabled=$(aws kms get-key-rotation-status --key-id "$key_id" --output json 2>/dev/null | jq -r '.KeyRotationEnabled // false' || echo "false")
+  if [ "$rotation_enabled" != "true" ]; then
+    echo "  ROTATION_DISABLED" >> "$REPORT_FILE"
+    send_slack_alert "KMS Alert: Rotation disabled for key $key_id ($key_arn)"
+  else
+    echo "  Rotation enabled" >> "$REPORT_FILE"
+  fi
+
+  # list aliases
+  aws kms list-aliases --key-id "$key_id" --output json 2>/dev/null | jq -c '.Aliases[]? // empty' | while read -r a; do
+    alias_name=$(echo "$a" | jq -r '.AliasName // ""')
+    echo "  Alias: $alias_name" >> "$REPORT_FILE"
+  done
+
+  # check key policy for overly permissive principals
+  policy=$(aws kms get-key-policy --key-id "$key_id" --policy-name default --output text 2>/dev/null || echo "")
+  if [ -z "$policy" ]; then
+    echo "  POLICY_MISSING" >> "$REPORT_FILE"
+    send_slack_alert "KMS Alert: No key policy found for $key_id"
+  else
+    # heuristic checks
+    if echo "$policy" | grep -q '"Principal"[[:space:]]*:[[:space:]]*"\*"' || echo "$policy" | grep -q '"AWS"[[:space:]]*:[[:space:]]*"\*"'; then
+      echo "  POLICY_PERMISSIVE: principal='*' or AWS='*'" >> "$REPORT_FILE"
+      send_slack_alert "KMS Alert: Key policy for $key_id appears permissive (wildcard principal)"
+    else
+      echo "  Policy appears restricted (no wildcard principal detected)" >> "$REPORT_FILE"
+    fi
+  fi
+
+  echo "" >> "$REPORT_FILE"
+}
+
+main() {
+  write_header
+
+  keys_json=$(aws kms list-keys --output json 2>/dev/null || echo '{"Keys":[]}')
+  echo "$keys_json" | jq -c '.Keys[]? // empty' | while read -r k; do
+    kid=$(echo "$k" | jq -r '.KeyId')
+    check_key "$kid"
+  done
+
+  log_message "KMS audit written to $REPORT_FILE"
+}
+
+main "$@"
 #!/bin/bash
 
 ################################################################################
