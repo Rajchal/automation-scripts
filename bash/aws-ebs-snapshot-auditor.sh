@@ -1,3 +1,79 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+LOG_FILE="/var/log/aws-ebs-snapshot-auditor.log"
+REPORT_FILE="/tmp/ebs-snapshot-auditor-$(date +%Y%m%d%H%M%S).txt"
+SLACK_WEBHOOK="${SLACK_WEBHOOK:-}"
+REGION="${AWS_REGION:-${REGION:-us-east-1}}"
+OLD_DAYS="${EBS_SNAPSHOT_OLD_DAYS:-30}"
+
+log_message() { echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] $*" | tee -a "$LOG_FILE"; }
+
+send_slack_alert() {
+  if [ -n "$SLACK_WEBHOOK" ]; then
+    payload=$(jq -n --arg t "$1" '{"text":$t}')
+    curl -s -X POST -H 'Content-type: application/json' --data "$payload" "$SLACK_WEBHOOK" || true
+  fi
+}
+
+write_header() {
+  echo "AWS EBS Snapshot Auditor - $(date -u)" > "$REPORT_FILE"
+  echo "Region: $REGION" >> "$REPORT_FILE"
+  echo "Old threshold (days): $OLD_DAYS" >> "$REPORT_FILE"
+  echo "" >> "$REPORT_FILE"
+}
+
+check_snapshots() {
+  # list snapshots owned by self
+  aws ec2 describe-snapshots --owner-ids self --query 'Snapshots[]' --output json 2>/dev/null | jq -c '.[]? // empty' | while read -r s; do
+    sid=$(echo "$s" | jq -r '.SnapshotId')
+    vol=$(echo "$s" | jq -r '.VolumeId // ""')
+    start_time=$(echo "$s" | jq -r '.StartTime')
+    tags=$(echo "$s" | jq -c '.Tags // []')
+
+    # calculate age
+    start_epoch=$(date -d "$start_time" +%s 2>/dev/null || true)
+    if [ -n "$start_epoch" ]; then
+      age_days=$(( ( $(date +%s) - start_epoch ) / 86400 ))
+    else
+      age_days=0
+    fi
+
+    # skip snapshots explicitly tagged to retain
+    retain=$(echo "$tags" | jq -r '.[]? | select(.Key=="retain" or .Key=="Retain") | .Value' || true)
+    if [ -n "$retain" ]; then
+      echo "Snapshot $sid (vol=$vol) age=${age_days}d - retained by tag" >> "$REPORT_FILE"
+      continue
+    fi
+
+    if [ "$age_days" -ge "$OLD_DAYS" ]; then
+      echo "OLD_SNAPSHOT: $sid volume=$vol age=${age_days}d" >> "$REPORT_FILE"
+      send_slack_alert "EBS Snapshot Alert: Snapshot $sid (vol=$vol) is ${age_days} days old"
+    fi
+
+    # check for orphaned volumes: if volume is empty or deleted, note snapshot status
+    if [ -z "$vol" ] || [ "$vol" = "null" ]; then
+      echo "  ORPHANED_SNAPSHOT: $sid (no volume)" >> "$REPORT_FILE"
+      send_slack_alert "EBS Snapshot Alert: Snapshot $sid has no associated volume"
+    else
+      # verify volume exists
+      if ! aws ec2 describe-volumes --volume-ids "$vol" --output json >/dev/null 2>&1; then
+        echo "  ORPHANED_SNAPSHOT: $sid volume=$vol (volume not found)" >> "$REPORT_FILE"
+        send_slack_alert "EBS Snapshot Alert: Snapshot $sid references missing volume $vol"
+      fi
+    fi
+
+    echo "" >> "$REPORT_FILE"
+  done
+}
+
+main() {
+  write_header
+  check_snapshots
+  log_message "EBS snapshot audit written to $REPORT_FILE"
+}
+
+main "$@"
 #!/bin/bash
 
 ################################################################################
