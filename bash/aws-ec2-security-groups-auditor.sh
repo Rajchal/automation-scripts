@@ -1,3 +1,95 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+LOG_FILE="/var/log/aws-ec2-security-groups-auditor.log"
+REPORT_FILE="/tmp/ec2-security-groups-auditor-$(date +%Y%m%d%H%M%S).txt"
+SLACK_WEBHOOK="${SLACK_WEBHOOK:-}"
+REGION="${AWS_REGION:-${REGION:-us-east-1}}"
+
+log_message() { echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] $*" | tee -a "$LOG_FILE"; }
+
+send_slack_alert() {
+  if [ -n "$SLACK_WEBHOOK" ]; then
+    payload=$(jq -n --arg t "$1" '{"text":$t}')
+    curl -s -X POST -H 'Content-type: application/json' --data "$payload" "$SLACK_WEBHOOK" || true
+  fi
+}
+
+write_header() {
+  echo "AWS EC2 Security Groups Auditor - $(date -u)" > "$REPORT_FILE"
+  echo "Region: $REGION" >> "$REPORT_FILE"
+  echo "" >> "$REPORT_FILE"
+}
+
+check_sg() {
+  local sg_id="$1"
+  local name desc
+  name=$(echo "$2")
+  desc=$(echo "$3")
+  echo "SecurityGroup: $sg_id Name: $name Desc: $desc" >> "$REPORT_FILE"
+
+  # ingress rules exposing 0.0.0.0/0 or ::/0
+  aws ec2 describe-security-groups --group-ids "$sg_id" --output json 2>/dev/null | jq -c '.SecurityGroups[]? | {IpPermissions,IpPermissionsEgress}' | while read -r perms; do
+    echo "$perms" | jq -c '.IpPermissions[]? // empty' | while read -r p; do
+      from=$(echo "$p" | jq -r '.FromPort // "-"')
+      to=$(echo "$p" | jq -r '.ToPort // "-"')
+      proto=$(echo "$p" | jq -r '.IpProtocol')
+      echo "$p" | jq -c '.IpRanges[]? // empty' | while read -r r; do
+        cidr=$(echo "$r" | jq -r '.CidrIp // empty')
+        desc_rule=$(echo "$r" | jq -r '.Description // empty')
+        if [ "$cidr" = "0.0.0.0/0" ]; then
+          echo "  INGRESS_PUBLIC: proto=$proto ports=$from-$to cidr=$cidr desc='$desc_rule'" >> "$REPORT_FILE"
+          send_slack_alert "SecurityGroup Alert: $sg_id allows ingress from 0.0.0.0/0 proto=$proto ports=$from-$to"
+        fi
+      done
+      echo "$p" | jq -c '.Ipv6Ranges[]? // empty' | while read -r r6; do
+        cidr6=$(echo "$r6" | jq -r '.CidrIpv6 // empty')
+        if [ "$cidr6" = "::/0" ]; then
+          echo "  INGRESS_PUBLIC_IPV6: proto=$proto ports=$from-$to cidr=$cidr6" >> "$REPORT_FILE"
+          send_slack_alert "SecurityGroup Alert: $sg_id allows IPv6 ingress from ::/0 proto=$proto ports=$from-$to"
+        fi
+      done
+    done
+
+    # egress too permissive
+    echo "$perms" | jq -c '.IpPermissionsEgress[]? // empty' | while read -r pe; do
+      echo "$pe" | jq -c '.IpRanges[]? // empty' | while read -r r; do
+        cidr=$(echo "$r" | jq -r '.CidrIp // empty')
+        if [ "$cidr" = "0.0.0.0/0" ]; then
+          proto=$(echo "$pe" | jq -r '.IpProtocol')
+          from=$(echo "$pe" | jq -r '.FromPort // "-"')
+          to=$(echo "$pe" | jq -r '.ToPort // "-"')
+          echo "  EGRESS_PUBLIC: proto=$proto ports=$from-$to cidr=$cidr" >> "$REPORT_FILE"
+          send_slack_alert "SecurityGroup Alert: $sg_id allows egress to 0.0.0.0/0 proto=$proto ports=$from-$to"
+        fi
+      done
+    done
+  done
+
+  # find attachments (ENIs) — empty means unused SG
+  attached_count=$(aws ec2 describe-network-interfaces --filters Name=group-id,Values="$sg_id" --output json 2>/dev/null | jq -r '.NetworkInterfaces | length')
+  echo "  AttachedENIs=$attached_count" >> "$REPORT_FILE"
+  if [ "$attached_count" -eq 0 ]; then
+    echo "  UNUSED_SECURITY_GROUP" >> "$REPORT_FILE"
+    send_slack_alert "SecurityGroup Notice: $sg_id appears unused (no ENIs attached)"
+  fi
+
+  echo "" >> "$REPORT_FILE"
+}
+
+main() {
+  write_header
+  aws ec2 describe-security-groups --output json 2>/dev/null | jq -c '.SecurityGroups[]? // empty' | while read -r sg; do
+    sgid=$(echo "$sg" | jq -r '.GroupId')
+    name=$(echo "$sg" | jq -r '.GroupName // ""')
+    desc=$(echo "$sg" | jq -r '.Description // ""')
+    check_sg "$sgid" "$name" "$desc"
+  done
+
+  log_message "EC2 security-groups audit written to $REPORT_FILE"
+}
+
+main "$@"
 #!/bin/bash
 
 ################################################################################
