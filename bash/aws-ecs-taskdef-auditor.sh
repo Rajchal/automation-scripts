@@ -4,6 +4,90 @@ set -euo pipefail
 LOG_FILE="/var/log/aws-ecs-taskdef-auditor.log"
 REPORT_FILE="/tmp/ecs-taskdef-auditor-$(date +%Y%m%d%H%M%S).txt"
 SLACK_WEBHOOK="${SLACK_WEBHOOK:-}"
+
+log_message(){ echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] $*" | tee -a "$LOG_FILE"; }
+
+send_slack_alert(){
+  [ -n "$SLACK_WEBHOOK" ] || return 0
+  payload=$(jq -n --arg t "$1" '{"text":$t}')
+  curl -s -X POST -H 'Content-type: application/json' --data "$payload" "$SLACK_WEBHOOK" || true
+}
+
+write_header(){
+  echo "ECS Task Definition Auditor - $(date -u)" > "$REPORT_FILE"
+  echo "" >> "$REPORT_FILE"
+}
+
+check_taskdef(){
+  local td_arn="$1"
+  td_json=$(aws ecs describe-task-definition --task-definition "$td_arn" --output json 2>/dev/null || echo '{}')
+  family=$(echo "$td_json" | jq -r '.taskDefinition.family // ""')
+  revision=$(echo "$td_json" | jq -r '.taskDefinition.revision // ""')
+  networkMode=$(echo "$td_json" | jq -r '.taskDefinition.networkMode // ""')
+  requiresCompat=$(echo "$td_json" | jq -r '.taskDefinition.requiresCompatibilities[]? // empty' | paste -sd"," -)
+
+  echo "TaskDefinition: ${family}:${revision} arn=${td_arn}" >> "$REPORT_FILE"
+  echo "  networkMode=${networkMode} requiresCompatibilities=${requiresCompat}" >> "$REPORT_FILE"
+
+  if [ "$networkMode" = "host" ]; then
+    echo "  WARNING: networkMode=host (containers share host network)" >> "$REPORT_FILE"
+    send_slack_alert "ECS Alert: TaskDefinition ${family}:${revision} uses host networkMode"
+  fi
+
+  # iterate containers
+  echo "$td_json" | jq -c '.taskDefinition.containerDefinitions[]? // empty' | while read -r c; do
+    cname=$(echo "$c" | jq -r '.name')
+    privileged=$(echo "$c" | jq -r '.linuxParameters.privileged // false' 2>/dev/null || echo false)
+    host_pid=$(echo "$c" | jq -r '.linuxParameters.initProcessEnabled // false' 2>/dev/null || echo false)
+    readonly_root=$(echo "$c" | jq -r '.readonlyRootFilesystem // false')
+
+    echo "  Container: $cname privileged=$privileged readonlyRoot=$readonly_root" >> "$REPORT_FILE"
+
+    if [ "$privileged" = "true" ]; then
+      echo "    ISSUE: container runs privileged" >> "$REPORT_FILE"
+      send_slack_alert "ECS Alert: Task ${family}:${revision} container $cname is privileged"
+    fi
+
+    # check port mappings host ports
+    echo "$c" | jq -c '.portMappings[]? // empty' | while read -r pm; do
+      host_port=$(echo "$pm" | jq -r '.hostPort // empty')
+      container_port=$(echo "$pm" | jq -r '.containerPort // empty')
+      protocol=$(echo "$pm" | jq -r '.protocol // "tcp"')
+      if [ -n "$host_port" ] && [ "$host_port" != "0" ]; then
+        echo "    HOST_PORT_MAPPING: hostPort=$host_port containerPort=$container_port proto=$protocol" >> "$REPORT_FILE"
+        send_slack_alert "ECS Alert: Task ${family}:${revision} container $cname maps hostPort $host_port"
+      fi
+    done
+
+    # check environment variables for plaintext secrets (heuristic)
+    echo "$c" | jq -c '.environment[]? // empty' | while read -r env; do
+      k=$(echo "$env" | jq -r '.name')
+      v=$(echo "$env" | jq -r '.value // empty')
+      if [ -n "$v" ] && echo "$k" | grep -Ei "(PASSWORD|SECRET|KEY|TOKEN)" >/dev/null 2>&1; then
+        echo "    PLAINTEXT_ENV: $k looks sensitive and is set in taskdef (value hidden)" >> "$REPORT_FILE"
+        send_slack_alert "ECS Alert: Task ${family}:${revision} container $cname contains plaintext env var $k"
+      fi
+    done
+  done
+
+  echo "" >> "$REPORT_FILE"
+}
+
+main(){
+  write_header
+  aws ecs list-task-definitions --output json 2>/dev/null | jq -r '.taskDefinitionArns[]? // empty' | while read -r td; do
+    check_taskdef "$td"
+  done
+  log_message "ECS task-definition audit written to $REPORT_FILE"
+}
+
+main "$@"
+#!/usr/bin/env bash
+set -euo pipefail
+
+LOG_FILE="/var/log/aws-ecs-taskdef-auditor.log"
+REPORT_FILE="/tmp/ecs-taskdef-auditor-$(date +%Y%m%d%H%M%S).txt"
+SLACK_WEBHOOK="${SLACK_WEBHOOK:-}"
 REGION="${AWS_REGION:-${REGION:-us-east-1}}"
 
 log_message() { echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] $*" | tee -a "$LOG_FILE"; }
