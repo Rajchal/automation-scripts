@@ -5,6 +5,111 @@ LOG_FILE="/var/log/aws-lambda-env-auditor.log"
 REPORT_FILE="/tmp/lambda-env-auditor-$(date +%Y%m%d%H%M%S).txt"
 SLACK_WEBHOOK="${SLACK_WEBHOOK:-}"
 REGION="${AWS_REGION:-${REGION:-us-east-1}}"
+MAX_TIMEOUT="${LAMBDA_MAX_TIMEOUT:-300}"
+MIN_MEMORY="${LAMBDA_MIN_MEMORY:-128}"
+
+log_message() { echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] $*" | tee -a "$LOG_FILE"; }
+
+send_slack_alert() {
+  if [ -n "$SLACK_WEBHOOK" ]; then
+    payload=$(jq -n --arg t "$1" '{"text":$t}')
+    curl -s -X POST -H 'Content-type: application/json' --data "$payload" "$SLACK_WEBHOOK" || true
+  fi
+}
+
+write_header() {
+  echo "AWS Lambda Environment Auditor - $(date -u)" > "$REPORT_FILE"
+  echo "Region (API): $REGION" >> "$REPORT_FILE"
+  echo "Max timeout warn: ${MAX_TIMEOUT}s" >> "$REPORT_FILE"
+  echo "Min memory recommended: ${MIN_MEMORY}MB" >> "$REPORT_FILE"
+  echo "" >> "$REPORT_FILE"
+}
+
+deprecated_runtime() {
+  case "$1" in
+    nodejs|nodejs0.10|nodejs4.3|nodejs6.10|python2.7|java6|dotnetcore1.0) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+check_function() {
+  local name="$1"
+  cfg_json=$(aws lambda get-function-configuration --function-name "$name" --output json 2>/dev/null || echo '{}')
+  if [ -z "$cfg_json" ] || [ "$cfg_json" = "{}" ]; then
+    echo "Function: $name - unable to describe" >> "$REPORT_FILE"
+    return
+  fi
+
+  runtime=$(echo "$cfg_json" | jq -r '.Runtime // ""')
+  timeout=$(echo "$cfg_json" | jq -r '.Timeout // 0')
+  memory=$(echo "$cfg_json" | jq -r '.MemorySize // 0')
+  vpc=$(echo "$cfg_json" | jq -c '.VpcConfig // {}')
+  role=$(echo "$cfg_json" | jq -r '.Role // ""')
+  layers=$(echo "$cfg_json" | jq -r '.Layers // [] | length')
+  envs=$(echo "$cfg_json" | jq -c '.Environment.Variables // {}')
+
+  echo "Function: $name runtime=$runtime timeout=${timeout}s memory=${memory}MB role=$role layers=$layers" >> "$REPORT_FILE"
+
+  # runtime
+  if deprecated_runtime "$runtime"; then
+    echo "  DEPRECATED_RUNTIME: $runtime" >> "$REPORT_FILE"
+    send_slack_alert "Lambda Alert: Function $name uses deprecated runtime $runtime"
+  fi
+
+  # timeout
+  if [ "$timeout" -gt "$MAX_TIMEOUT" ]; then
+    echo "  TIMEOUT_HIGH: ${timeout}s > ${MAX_TIMEOUT}s" >> "$REPORT_FILE"
+    send_slack_alert "Lambda Alert: Function $name has timeout ${timeout}s (>${MAX_TIMEOUT}s)"
+  fi
+
+  # memory
+  if [ "$memory" -lt "$MIN_MEMORY" ]; then
+    echo "  LOW_MEMORY: ${memory}MB < ${MIN_MEMORY}MB" >> "$REPORT_FILE"
+    send_slack_alert "Lambda Notice: Function $name memory ${memory}MB is below recommended ${MIN_MEMORY}MB"
+  fi
+
+  # VPC check
+  vpc_subnets=$(echo "$vpc" | jq -r '.SubnetIds // [] | length')
+  if [ "$vpc_subnets" -eq 0 ]; then
+    echo "  NOT_IN_VPC: function not attached to VPC" >> "$REPORT_FILE"
+  else
+    echo "  VPC_SUBNETS: $vpc_subnets" >> "$REPORT_FILE"
+  fi
+
+  # environment variable name checks
+  echo "$envs" | jq -r 'to_entries[]? | .key' | while read -r k; do
+    if echo "$k" | grep -Ei "PASSWORD|SECRET|TOKEN|KEY|AWS_SECRET|ACCESS_KEY" >/dev/null 2>&1; then
+      echo "  POSSIBLE_PLAINTEXT_SECRET_ENV: $k" >> "$REPORT_FILE"
+      send_slack_alert "Lambda Alert: Function $name has environment variable named $k (possible secret)"
+    fi
+  done
+
+  # check for large number of layers
+  if [ "$layers" -gt 5 ]; then
+    echo "  MANY_LAYERS: $layers" >> "$REPORT_FILE"
+    send_slack_alert "Lambda Notice: Function $name attaches $layers layers"
+  fi
+
+  echo "" >> "$REPORT_FILE"
+}
+
+main() {
+  write_header
+  aws lambda list-functions --output json 2>/dev/null | jq -r '.Functions[]?.FunctionName' | while read -r fn; do
+    check_function "$fn"
+  done
+
+  log_message "Lambda environment audit written to $REPORT_FILE"
+}
+
+main "$@"
+#!/usr/bin/env bash
+set -euo pipefail
+
+LOG_FILE="/var/log/aws-lambda-env-auditor.log"
+REPORT_FILE="/tmp/lambda-env-auditor-$(date +%Y%m%d%H%M%S).txt"
+SLACK_WEBHOOK="${SLACK_WEBHOOK:-}"
+REGION="${AWS_REGION:-${REGION:-us-east-1}}"
 ENV_SECRET_PATTERNS='PASSWORD|SECRET|TOKEN|KEY|AWS_SECRET|PRIVATE'
 MEMORY_THRESHOLD="${LAMBDA_MEMORY_WARN:-128}"
 TIMEOUT_THRESHOLD="${LAMBDA_TIMEOUT_WARN:-30}"
