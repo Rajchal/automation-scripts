@@ -4,6 +4,112 @@ set -euo pipefail
 LOG_FILE="/var/log/aws-ecs-taskdef-auditor.log"
 REPORT_FILE="/tmp/ecs-taskdef-auditor-$(date +%Y%m%d%H%M%S).txt"
 SLACK_WEBHOOK="${SLACK_WEBHOOK:-}"
+REGION="${AWS_REGION:-${REGION:-us-east-1}}"
+
+log_message() { echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] $*" | tee -a "$LOG_FILE"; }
+
+send_slack_alert() {
+  if [ -n "$SLACK_WEBHOOK" ]; then
+    payload=$(jq -n --arg t "$1" '{"text":$t}')
+    curl -s -X POST -H 'Content-type: application/json' --data "$payload" "$SLACK_WEBHOOK" || true
+  fi
+}
+
+write_header() {
+  echo "AWS ECS TaskDefinition Auditor - $(date -u)" > "$REPORT_FILE"
+  echo "Region (API): $REGION" >> "$REPORT_FILE"
+  echo "" >> "$REPORT_FILE"
+}
+
+check_taskdef() {
+  local td_arn="$1"
+  td_json=$(aws ecs describe-task-definition --task-definition "$td_arn" --output json 2>/dev/null || echo '{}')
+  td=$(echo "$td_json" | jq -c '.taskDefinition // empty')
+  family=$(echo "$td" | jq -r '.family // ""')
+  revision=$(echo "$td" | jq -r '.revision // ""')
+  network_mode=$(echo "$td" | jq -r '.networkMode // ""')
+
+  echo "TaskDefinition: ${family}:${revision} arn=${td_arn} networkMode=${network_mode}" >> "$REPORT_FILE"
+
+  echo "$td" | jq -c '.containerDefinitions[]? // empty' | while read -r c; do
+    cname=$(echo "$c" | jq -r '.name')
+    image=$(echo "$c" | jq -r '.image // ""')
+    privileged=$(echo "$c" | jq -r '.linuxParameters?.capabilities?.add // empty') || privileged=""
+    readonly_root=$(echo "$c" | jq -r '.readonlyRootFilesystem // false')
+    cpu=$(echo "$c" | jq -r '.cpu // empty')
+    memory=$(echo "$c" | jq -r '.memory // empty')
+    logconf=$(echo "$c" | jq -c '.logConfiguration // empty')
+
+    echo "  Container: $cname image=$image cpu=$cpu memory=$memory readonlyRoot=$readonly_root" >> "$REPORT_FILE"
+
+    # image tag checks
+    if [[ "$image" =~ :latest$ ]] || [[ ! "$image" =~ : ]]; then
+      echo "    IMAGE_TAG_LATEST_OR_UNTAGGED: $image" >> "$REPORT_FILE"
+      send_slack_alert "ECS Alert: TaskDef ${family}:${revision} container $cname uses image tag 'latest' or untagged: $image"
+    fi
+
+    # privileged check (heuristic)
+    if echo "$c" | jq -e '.privileged? // false' >/dev/null 2>&1 && [ "$(echo "$c" | jq -r '.privileged // false')" = "true" ]; then
+      echo "    PRIVILEGED_CONTAINER: $cname" >> "$REPORT_FILE"
+      send_slack_alert "ECS Alert: TaskDef ${family}:${revision} container $cname is privileged"
+    fi
+
+    # host port usage
+    echo "$c" | jq -c '.portMappings[]? // empty' | while read -r pm; do
+      hostp=$(echo "$pm" | jq -r '.hostPort // empty')
+      contp=$(echo "$pm" | jq -r '.containerPort // empty')
+      proto=$(echo "$pm" | jq -r '.protocol // empty')
+      if [ -n "$hostp" ] && [ "$hostp" != "0" ]; then
+        echo "    HOST_PORT_MAPPING: hostPort=$hostp containerPort=$contp proto=$proto" >> "$REPORT_FILE"
+        send_slack_alert "ECS Alert: TaskDef ${family}:${revision} container $cname maps hostPort=$hostp (containerPort=$contp)"
+      fi
+    done
+
+    # logging config
+    if [ "$(echo "$logconf" | jq -r 'length')" = "0" ] || [ "$logconf" = "null" ]; then
+      echo "    NO_LOG_CONFIGURATION" >> "$REPORT_FILE"
+      send_slack_alert "ECS Notice: TaskDef ${family}:${revision} container $cname has no logConfiguration"
+    fi
+
+    # check environment vars for suspicious names
+    echo "$c" | jq -c '.environment[]? // empty' | while read -r ev; do
+      ename=$(echo "$ev" | jq -r '.name')
+      if echo "$ename" | grep -Ei "PASSWORD|SECRET|TOKEN|KEY|AWS_SECRET" >/dev/null 2>&1; then
+        echo "    POSSIBLE_PLAINTEXT_SECRET: env=$ename" >> "$REPORT_FILE"
+        send_slack_alert "ECS Alert: TaskDef ${family}:${revision} container $cname has environment variable named $ename (possible secret)"
+      fi
+    done
+
+    # resource limits
+    if [ -z "$cpu" ] || [ "$cpu" = "null" ]; then
+      echo "    MISSING_CPU" >> "$REPORT_FILE"
+    fi
+    if [ -z "$memory" ] || [ "$memory" = "null" ]; then
+      echo "    MISSING_MEMORY" >> "$REPORT_FILE"
+    fi
+  done
+
+  echo "" >> "$REPORT_FILE"
+}
+
+main() {
+  write_header
+
+  # list active task definitions (limit recent)
+  aws ecs list-task-definitions --status ACTIVE --output json 2>/dev/null | jq -r '.taskDefinitionArns[]? // empty' | while read -r td; do
+    check_taskdef "$td"
+  done
+
+  log_message "ECS TaskDefinition audit written to $REPORT_FILE"
+}
+
+main "$@"
+#!/usr/bin/env bash
+set -euo pipefail
+
+LOG_FILE="/var/log/aws-ecs-taskdef-auditor.log"
+REPORT_FILE="/tmp/ecs-taskdef-auditor-$(date +%Y%m%d%H%M%S).txt"
+SLACK_WEBHOOK="${SLACK_WEBHOOK:-}"
 
 log_message(){ echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] $*" | tee -a "$LOG_FILE"; }
 
