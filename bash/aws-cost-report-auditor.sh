@@ -4,6 +4,105 @@ set -euo pipefail
 LOG_FILE="/var/log/aws-cost-report-auditor.log"
 REPORT_FILE="/tmp/cost-report-auditor-$(date +%Y%m%d%H%M%S).txt"
 SLACK_WEBHOOK="${SLACK_WEBHOOK:-}"
+REGION="${AWS_REGION:-${REGION:-us-east-1}}"
+LOOKBACK_DAYS="${COST_LOOKBACK_DAYS:-30}"
+ALERT_PERCENT="${COST_ALERT_PERCENT:-30}"
+
+log_message() { echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] $*" | tee -a "$LOG_FILE"; }
+
+send_slack_alert() {
+  if [ -n "$SLACK_WEBHOOK" ]; then
+    payload=$(jq -n --arg t "$1" '{"text":$t}')
+    curl -s -X POST -H 'Content-type: application/json' --data "$payload" "$SLACK_WEBHOOK" || true
+  fi
+}
+
+write_header() {
+  echo "AWS Cost Report Auditor - $(date -u)" > "$REPORT_FILE"
+  echo "Region (API): $REGION" >> "$REPORT_FILE"
+  echo "Lookback days: $LOOKBACK_DAYS" >> "$REPORT_FILE"
+  echo "Alert percent threshold: $ALERT_PERCENT%" >> "$REPORT_FILE"
+  echo "" >> "$REPORT_FILE"
+}
+
+sum_by_service() {
+  local start="$1"; local end="$2"
+  aws ce get-cost-and-usage \
+    --time-period Start=$start,End=$end \
+    --granularity DAILY \
+    --metrics UnblendedCost \
+    --group-by Type=DIMENSION,Key=SERVICE \
+    --output json 2>/dev/null |
+    jq -r '.ResultsByTime[]?.Groups[]? | [.Keys[0], (.Metrics.UnblendedCost.Amount|tonumber)] | @tsv' || echo ""
+}
+
+aggregate_period_total() {
+  # input: TSV lines Service\tAmount
+  awk -F"\t" '{a[$1]+=$2}END{for (i in a) printf "%s\t%.2f\n", i, a[i]}' | sort -k2nr
+}
+
+percent_change() {
+  local prev="$1"; local curr="$2"
+  if (( $(echo "$prev == 0" | bc -l) )); then
+    if (( $(echo "$curr > 0" | bc -l) )); then
+      echo "inf"
+    else
+      echo "0"
+    fi
+  else
+    echo "$(awk -v p="$prev" -v c="$curr" 'BEGIN{printf "%.2f", (c-p)/p*100}')"
+  fi
+}
+
+main() {
+  write_header
+
+  END=$(date -u +%Y-%m-%d)
+  START=$(date -u -d "$LOOKBACK_DAYS days ago" +%Y-%m-%d)
+  PREV_END=$(date -u -d "$LOOKBACK_DAYS days ago" +%Y-%m-%d)
+  PREV_START=$(date -u -d "$((LOOKBACK_DAYS*2)) days ago" +%Y-%m-%d)
+
+  echo "Current period: $START to $END" >> "$REPORT_FILE"
+  echo "Previous period: $PREV_START to $PREV_END" >> "$REPORT_FILE"
+  echo "" >> "$REPORT_FILE"
+
+  # current
+  curr_raw=$(sum_by_service "$START" "$END")
+  curr_tot=$(echo "$curr_raw" | awk -F"\t" '{s+=$2}END{printf "%.2f", s}')
+  echo "Total cost (current ${LOOKBACK_DAYS}d): $curr_tot" >> "$REPORT_FILE"
+  echo "Breakdown by service (top 20):" >> "$REPORT_FILE"
+  echo "$curr_raw" | aggregate_period_total | head -n 20 | awk -F"\t" '{printf "%s\t$%s\n", $1, $2}' >> "$REPORT_FILE"
+  echo "" >> "$REPORT_FILE"
+
+  # previous
+  prev_raw=$(sum_by_service "$PREV_START" "$PREV_END")
+  prev_tot=$(echo "$prev_raw" | awk -F"\t" '{s+=$2}END{printf "%.2f", s}')
+  echo "Total cost (previous ${LOOKBACK_DAYS}d): $prev_tot" >> "$REPORT_FILE"
+  echo "" >> "$REPORT_FILE"
+
+  change=$(percent_change "$prev_tot" "$curr_tot")
+  echo "Percent change vs previous: ${change}%" >> "$REPORT_FILE"
+
+  # alert on large increase
+  if [ "$change" = "inf" ]; then
+    send_slack_alert "Cost Alert: Current ${LOOKBACK_DAYS}d cost is $curr_tot USD (previous $prev_tot). Large increase (previous=0)."
+  else
+    # numeric compare
+    if (( $(echo "$change >= $ALERT_PERCENT" | bc -l) )); then
+      send_slack_alert "Cost Alert: Cost increased ${change}% over previous ${LOOKBACK_DAYS}d (current=$curr_tot USD)."
+    fi
+  fi
+
+  log_message "Cost report written to $REPORT_FILE"
+}
+
+main "$@"
+#!/usr/bin/env bash
+set -euo pipefail
+
+LOG_FILE="/var/log/aws-cost-report-auditor.log"
+REPORT_FILE="/tmp/cost-report-auditor-$(date +%Y%m%d%H%M%S).txt"
+SLACK_WEBHOOK="${SLACK_WEBHOOK:-}"
 WINDOW_DAYS="${COST_WINDOW_DAYS:-7}"
 COST_WARN_DOLLARS="${COST_WARN_DOLLARS:-100.00}"
 
