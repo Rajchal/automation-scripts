@@ -4,6 +4,88 @@ set -euo pipefail
 LOG_FILE="/var/log/aws-cost-report-auditor.log"
 REPORT_FILE="/tmp/cost-report-auditor-$(date +%Y%m%d%H%M%S).txt"
 SLACK_WEBHOOK="${SLACK_WEBHOOK:-}"
+COST_WARN_AMOUNT="${COST_WARN_AMOUNT:-1000}" # default USD
+TOP_N="${COST_REPORT_TOP_N:-10}"
+
+log_message() {
+  echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] $*" | tee -a "$LOG_FILE"
+}
+
+send_slack_alert() {
+  if [ -n "$SLACK_WEBHOOK" ]; then
+    payload=$(jq -n --arg t "$1" '{"text":$t}')
+    curl -s -X POST -H 'Content-type: application/json' --data "$payload" "$SLACK_WEBHOOK" || true
+  fi
+}
+
+write_header() {
+  echo "AWS Cost Report Auditor - $(date -u)" > "$REPORT_FILE"
+  echo "Report period: Last full month" >> "$REPORT_FILE"
+  echo "Warn threshold: \">$${COST_WARN_AMOUNT}" >> "$REPORT_FILE"
+  echo "" >> "$REPORT_FILE"
+}
+
+last_month_range() {
+  START=$(date -d "$(date +%Y-%m-01) -1 month" +%Y-%m-01)
+  END=$(date -d "$(date +%Y-%m-01)" +%Y-%m-01)
+}
+
+get_total_cost() {
+  aws ce get-cost-and-usage --time-period Start="$START",End="$END" --granularity MONTHLY --metrics UnblendedCost --output json 2>/dev/null || true
+}
+
+report_top_services() {
+  local json="$1"
+  echo "Top ${TOP_N} services by cost:" >> "$REPORT_FILE"
+  echo "$json" | jq -r '.ResultsByTime[0].Groups[]? | [.Keys[0], .Metrics.UnblendedCost.Amount] | @tsv' | sort -k2 -nr | head -n "$TOP_N" | awk -F"\t" '{printf "  %-30s %10s\n", $1, "$"$2}' >> "$REPORT_FILE"
+  echo "" >> "$REPORT_FILE"
+}
+
+main() {
+  write_header
+  last_month_range
+
+  out=$(get_total_cost)
+  if [ -z "$out" ] || [ "$out" = "" ]; then
+    echo "Cost Explorer query failed or returned empty. Ensure AWS Cost Explorer is enabled and permissions are configured." >> "$REPORT_FILE"
+    log_message "Cost Explorer query failed"
+    exit 1
+  fi
+
+  total=$(echo "$out" | jq -r '.ResultsByTime[0].Total.UnblendedCost.Amount // "0"')
+  currency=$(echo "$out" | jq -r '.ResultsByTime[0].Total.UnblendedCost.Unit // "USD"')
+  echo "Total cost for ${START} to ${END} : ${currency} ${total}" >> "$REPORT_FILE"
+
+  # compare to threshold
+  if command -v bc >/dev/null 2>&1; then
+    cmp=$(echo "$total >= $COST_WARN_AMOUNT" | bc -l 2>/dev/null || echo 0)
+    if [ "$cmp" -eq 1 ]; then
+      send_slack_alert "Cost Alert: Total cost for ${START} to ${END} is ${currency} ${total} (>= ${COST_WARN_AMOUNT})"
+    fi
+  else
+    # fallback integer compare
+    total_int=${total%%.*}
+    if [ "$total_int" -ge "$COST_WARN_AMOUNT" ]; then
+      send_slack_alert "Cost Alert: Total cost for ${START} to ${END} is ${currency} ${total} (>= ${COST_WARN_AMOUNT})"
+    fi
+  fi
+
+  # Top services
+  report_top_services "$out"
+
+  echo "Detailed JSON (raw):" >> "$REPORT_FILE"
+  echo "$out" | jq '.' >> "$REPORT_FILE"
+
+  log_message "Cost report written to $REPORT_FILE"
+}
+
+main "$@"
+#!/usr/bin/env bash
+set -euo pipefail
+
+LOG_FILE="/var/log/aws-cost-report-auditor.log"
+REPORT_FILE="/tmp/cost-report-auditor-$(date +%Y%m%d%H%M%S).txt"
+SLACK_WEBHOOK="${SLACK_WEBHOOK:-}"
 REGION="${AWS_REGION:-${REGION:-us-east-1}}"
 COST_THRESHOLD="${COST_THRESHOLD:-1000.00}"
 PERIOD_DAYS="${COST_PERIOD_DAYS:-30}"
