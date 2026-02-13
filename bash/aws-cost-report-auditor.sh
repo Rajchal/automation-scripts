@@ -5,6 +5,75 @@ LOG_FILE="/var/log/aws-cost-report-auditor.log"
 REPORT_FILE="/tmp/cost-report-auditor-$(date +%Y%m%d%H%M%S).txt"
 SLACK_WEBHOOK="${SLACK_WEBHOOK:-}"
 REGION="${AWS_REGION:-${REGION:-us-east-1}}"
+COST_THRESHOLD="${COST_THRESHOLD:-1000.00}"
+PERIOD_DAYS="${COST_PERIOD_DAYS:-30}"
+
+log_message() { echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] $*" | tee -a "$LOG_FILE"; }
+
+send_slack_alert() {
+  if [ -n "$SLACK_WEBHOOK" ]; then
+    payload=$(jq -n --arg t "$1" '{"text":$t}')
+    curl -s -X POST -H 'Content-type: application/json' --data "$payload" "$SLACK_WEBHOOK" || true
+  fi
+}
+
+write_header() {
+  echo "AWS Cost Report Auditor - $(date -u)" > "$REPORT_FILE"
+  echo "Region (API): $REGION" >> "$REPORT_FILE"
+  echo "Period days: $PERIOD_DAYS" >> "$REPORT_FILE"
+  echo "Threshold (alert if >): $COST_THRESHOLD" >> "$REPORT_FILE"
+  echo "" >> "$REPORT_FILE"
+}
+
+main() {
+  write_header
+
+  end=$(date -u +%Y-%m-%d)
+  start=$(date -u -d "${PERIOD_DAYS} days ago" +%Y-%m-%d)
+
+  # Try using Cost Explorer (requires permissions and Cost Explorer enabled)
+  out=$(aws ce get-cost-and-usage \
+    --time-period Start=${start},End=${end} \
+    --granularity MONTHLY \
+    --metrics "UnblendedCost" \
+    --group-by Type=DIMENSION,Key=SERVICE \
+    --output json 2>/dev/null || true)
+
+  if [ -z "$out" ] || [ "$out" = "" ]; then
+    echo "Cost data not available (Cost Explorer may be disabled or insufficient permissions)" >> "$REPORT_FILE"
+    log_message "Cost data not available"
+    exit 0
+  fi
+
+  total=$(echo "$out" | jq -r '.ResultsByTime[0].Total.UnblendedCost.Amount // "0"')
+  if [ -z "$total" ] || [ "$total" = "null" ]; then
+    total=0
+  fi
+
+  echo "Total cost (start=${start} end=${end}): $total" >> "$REPORT_FILE"
+
+  # Top services
+  echo "Top services:" >> "$REPORT_FILE"
+  echo "$out" | jq -r '.ResultsByTime[0].Groups[]? | [.Keys[0], .Metrics.UnblendedCost.Amount] | @tsv' | sort -k2 -nr | head -n 10 | awk -F"\t" '{printf "  %s: %s\n", $1, $2}' >> "$REPORT_FILE"
+
+  # alert if above threshold
+  # use bc for float compare
+  if [ $(echo "$total > $COST_THRESHOLD" | bc -l) -eq 1 ]; then
+    send_slack_alert "Cost Alert: Total cost for ${start}..${end} = $total exceeds threshold $COST_THRESHOLD"
+    echo "ALERT: total ($total) > threshold ($COST_THRESHOLD)" >> "$REPORT_FILE"
+  fi
+
+  log_message "Cost report written to $REPORT_FILE"
+}
+
+main "$@"
+#!/usr/bin/env bash
+set -euo pipefail
+
+LOG_FILE="/var/log/aws-cost-report-auditor.log"
+REPORT_FILE="/tmp/cost-report-auditor-$(date +%Y%m%d%H%M%S).txt"
+SLACK_WEBHOOK="${SLACK_WEBHOOK:-}"
+REGION="${AWS_REGION:-${REGION:-us-east-1}}"
 LOOKBACK_DAYS="${COST_LOOKBACK_DAYS:-30}"
 ALERT_PERCENT="${COST_ALERT_PERCENT:-30}"
 
