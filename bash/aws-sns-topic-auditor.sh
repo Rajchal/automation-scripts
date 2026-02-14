@@ -21,6 +21,106 @@ write_header() {
   echo "" >> "$REPORT_FILE"
 }
 
+# Inspect topic attributes and subscriptions without retrieving sensitive message content
+check_topic() {
+  local topic_arn="$1"
+  echo "Topic: $topic_arn" >> "$REPORT_FILE"
+
+  attrs=$(aws sns get-topic-attributes --topic-arn "$topic_arn" --output json 2>/dev/null || echo '{}')
+  policy=$(echo "$attrs" | jq -r '.Attributes.Policy // empty')
+  delivery_policy=$(echo "$attrs" | jq -r '.Attributes.DeliveryPolicy // empty')
+  kms_key=$(echo "$attrs" | jq -r '.Attributes.KmsMasterKeyId // empty')
+
+  if [ -n "$policy" ]; then
+    # check for wildcard principal or Allow actions to everyone
+    if echo "$policy" | jq -e '.Statement[]? | select(.Effect=="Allow" and (.Principal=="*" or .Principal.AWS=="*"))' >/dev/null 2>&1; then
+      echo "  POLICY_PERMISSIVE: topic policy allows wildcard principal or public access" >> "$REPORT_FILE"
+      send_slack_alert "SNS Alert: Topic $topic_arn has a permissive policy (wildcard principal)"
+    fi
+  else
+    echo "  NO_POLICY" >> "$REPORT_FILE"
+  fi
+
+  if [ -z "$kms_key" ] || [ "$kms_key" = "null" ]; then
+    echo "  NOT_ENCRYPTED_WITH_KMS" >> "$REPORT_FILE"
+    send_slack_alert "SNS Notice: Topic $topic_arn has no KMS key configured for server-side encryption"
+  else
+    echo "  KMS_KEY: $kms_key" >> "$REPORT_FILE"
+  fi
+
+  if [ -n "$delivery_policy" ] && [ "$delivery_policy" != "null" ]; then
+    echo "  DeliveryPolicy: present" >> "$REPORT_FILE"
+  fi
+
+  # list subscriptions and inspect endpoints
+  aws sns list-subscriptions-by-topic --topic-arn "$topic_arn" --output json 2>/dev/null | jq -c '.Subscriptions[]? // empty' | while read -r s; do
+    sid=$(echo "$s" | jq -r '.SubscriptionArn // "<pending>"')
+    proto=$(echo "$s" | jq -r '.Protocol')
+    endpoint=$(echo "$s" | jq -r '.Endpoint // ""')
+    echo "  Subscription: arn=$sid proto=$proto endpoint=$endpoint" >> "$REPORT_FILE"
+
+    if [ "$proto" = "http" ]; then
+      echo "    SUB_ENDPOINT_INSECURE_HTTP" >> "$REPORT_FILE"
+      send_slack_alert "SNS Alert: Topic $topic_arn has HTTP subscription endpoint $endpoint (insecure)"
+    fi
+
+    if [ "$proto" = "email" ] || [ "$proto" = "email-json" ]; then
+      echo "    SUB_ENDPOINT_EMAIL" >> "$REPORT_FILE"
+    fi
+
+    # check if subscription endpoint is an SQS or Lambda (good) or other
+    if [ "$proto" = "sqs" ] || [ "$proto" = "lambda" ]; then
+      # no-op, considered internal
+      :
+    fi
+
+    # raw delivery check
+    # we avoid calling get-subscription-attributes in tight loops if unnecessary, but do a light check
+    if [ "$sid" != "<pending>" ]; then
+      sub_attrs=$(aws sns get-subscription-attributes --subscription-arn "$sid" --output json 2>/dev/null || echo '{}')
+      raw=$(echo "$sub_attrs" | jq -r '.Attributes.RawMessageDelivery // empty')
+      if [ "$raw" = "false" ] || [ -z "$raw" ]; then
+        echo "    RAW_MESSAGE_DELIVERY_DISABLED" >> "$REPORT_FILE"
+      fi
+    fi
+  done
+
+  echo "" >> "$REPORT_FILE"
+}
+
+main() {
+  write_header
+  aws sns list-topics --output json 2>/dev/null | jq -r '.Topics[]?.TopicArn' | while read -r t; do
+    check_topic "$t"
+  done
+
+  log_message "SNS topic audit written to $REPORT_FILE"
+}
+
+main "$@"
+#!/usr/bin/env bash
+set -euo pipefail
+
+LOG_FILE="/var/log/aws-sns-topic-auditor.log"
+REPORT_FILE="/tmp/sns-topic-auditor-$(date +%Y%m%d%H%M%S).txt"
+SLACK_WEBHOOK="${SLACK_WEBHOOK:-}"
+REGION="${AWS_REGION:-${REGION:-us-east-1}}"
+
+log_message() { echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] $*" | tee -a "$LOG_FILE"; }
+
+send_slack_alert() {
+  if [ -n "$SLACK_WEBHOOK" ]; then
+    payload=$(jq -n --arg t "$1" '{"text":$t}')
+    curl -s -X POST -H 'Content-type: application/json' --data "$payload" "$SLACK_WEBHOOK" || true
+  fi
+}
+
+write_header() {
+  echo "AWS SNS Topic Auditor - $(date -u)" > "$REPORT_FILE"
+  echo "Region (API): $REGION" >> "$REPORT_FILE"
+  echo "" >> "$REPORT_FILE"
+}
+
 check_topic() {
   local arn="$1"
   echo "Topic: $arn" >> "$REPORT_FILE"
