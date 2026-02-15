@@ -1,6 +1,127 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_NAME="aws-cloudfront-distribution-auditor.sh"
+LOG_FILE="/var/log/${SCRIPT_NAME%.sh}.log"
+REPORT_FILE="/tmp/${SCRIPT_NAME%.sh}-$(date +%s).txt"
+
+log_message() {
+  local msg="$1"
+  echo "$(date -u +'%Y-%m-%dT%H:%M:%SZ') - ${msg}" | tee -a "$LOG_FILE"
+}
+
+send_slack_alert() {
+  local text="$1"
+  if [ -n "${SLACK_WEBHOOK:-}" ]; then
+    jq -n --arg t "$text" '{text:$t}' | curl -s -X POST -H 'Content-type: application/json' --data @- "$SLACK_WEBHOOK" >/dev/null || true
+  fi
+}
+
+write_header() {
+  cat > "$REPORT_FILE" <<EOF
+AWS CloudFront Distributions Auditor
+Generated: $(date -u +'%Y-%m-%dT%H:%M:%SZ')
+
+Findings:
+EOF
+}
+
+check_distribution() {
+  local id="$1"
+  local cfg
+  cfg=$(aws cloudfront get-distribution --id "$id" --query 'Distribution.DistributionConfig' --output json 2>/dev/null) || return 0
+
+  local domain
+  domain=$(echo "$cfg" | jq -r '.Aliases.Items[0] // "(none)"')
+
+  local has_logging
+  has_logging=$(echo "$cfg" | jq -r '.Logging.Enabled // false')
+
+  local viewer_protocol
+  viewer_protocol=$(echo "$cfg" | jq -r '.DefaultCacheBehavior.ViewerProtocolPolicy // ""')
+
+  local min_tls
+  min_tls=$(echo "$cfg" | jq -r '.ViewerCertificate.MinimumProtocolVersion // ""')
+
+  local waf_id
+  waf_id=$(aws cloudfront get-distribution-config --id "$id" --query 'ETag' --output text 2>/dev/null || true)
+
+  local findings=()
+  if [ "$has_logging" != "true" ]; then
+    findings+=("Access logging disabled")
+  fi
+  if [ "$viewer_protocol" = "allow-all" ] || [ "$viewer_protocol" = "" ]; then
+    findings+=("Viewer protocol policy allows HTTP (not redirect-to-https)")
+  fi
+  if [ -n "$min_tls" ] && [[ "$min_tls" =~ TLSv1 ]] && [[ "$min_tls" != "TLSv1.2_2019" && "$min_tls" != "TLSv1.2_2021" ]]; then
+    findings+=("Minimum TLS version is weak: $min_tls")
+  fi
+
+  # Check if origin is S3 and whether OAI is used (best-effort)
+  local origins
+  origins=$(echo "$cfg" | jq -r '.Origins.Items[] | @base64')
+  for o in $origins; do
+    _jq() { echo ${o} | base64 --decode | jq -r "$1"; }
+    local origin_id
+    origin_id=$(_jq '.Id')
+    local domain_name
+    domain_name=$(_jq '.DomainName')
+    if [[ "$domain_name" == *.s3.amazonaws.com ]] || [[ "$domain_name" == *.s3-* ]]; then
+      # Check OriginAccessControlId or S3OriginConfig
+      local oac
+      oac=$(_jq '.OriginAccessControlId // empty')
+      local s3conf
+      s3conf=$(_jq '.S3OriginConfig.OriginAccessIdentity // empty')
+      if [ -z "$oac" ] && [ -z "$s3conf" ]; then
+        findings+=("S3 origin $domain_name without Origin Access Control / OAI - public S3 access possible")
+      fi
+    fi
+  done
+
+  if [ ${#findings[@]} -gt 0 ]; then
+    echo "Distribution: $id ($domain)" >> "$REPORT_FILE"
+    for f in "${findings[@]}"; do
+      echo "  - $f" >> "$REPORT_FILE"
+    done
+    echo >> "$REPORT_FILE"
+    return 0
+  fi
+  return 1
+}
+
+main() {
+  write_header
+  log_message "Starting CloudFront distributions auditor"
+
+  local ids
+  ids=$(aws cloudfront list-distributions --query 'DistributionList.Items[].Id' --output text 2>/dev/null || true)
+  if [ -z "$ids" ]; then
+    log_message "No CloudFront distributions found or AWS CLI failed"
+    rm -f "$REPORT_FILE"
+    exit 0
+  fi
+
+  local any=0
+  for d in $ids; do
+    if check_distribution "$d"; then
+      any=1
+      log_message "Findings for distribution $d"
+    fi
+  done
+
+  if [ "$any" -eq 1 ]; then
+    log_message "Finished with findings; report saved to $REPORT_FILE"
+    send_slack_alert "CloudFront auditor found issues. See $REPORT_FILE on host."
+  else
+    log_message "No issues found for CloudFront distributions"
+    rm -f "$REPORT_FILE"
+  fi
+}
+
+main "$@"
+#!/usr/bin/env bash
+set -euo pipefail
+
 LOG_FILE="/var/log/aws-cloudfront-distribution-auditor.log"
 REPORT_FILE="/tmp/cloudfront-distribution-auditor-$(date +%Y%m%d%H%M%S).txt"
 
