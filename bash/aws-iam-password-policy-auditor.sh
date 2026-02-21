@@ -1,6 +1,104 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_NAME="aws-iam-password-policy-auditor.sh"
+LOG_FILE="/var/log/${SCRIPT_NAME%.sh}.log"
+REPORT_FILE="/tmp/${SCRIPT_NAME%.sh}-$(date +%s).txt"
+
+log_message() {
+  local msg="$1"
+  echo "$(date -u +'%Y-%m-%dT%H:%M:%SZ') - ${msg}" | tee -a "$LOG_FILE"
+}
+
+send_slack_alert() {
+  local text="$1"
+  if [ -n "${SLACK_WEBHOOK:-}" ]; then
+    jq -n --arg t "$text" '{text:$t}' | curl -s -X POST -H 'Content-type: application/json' --data @- "$SLACK_WEBHOOK" >/dev/null || true
+  fi
+}
+
+write_header() {
+  cat > "$REPORT_FILE" <<EOF
+AWS IAM Account Password Policy Auditor
+Generated: $(date -u +'%Y-%m-%dT%H:%M:%SZ')
+
+Findings:
+EOF
+}
+
+main() {
+  write_header
+  log_message "Starting IAM password policy auditor"
+
+  local policy_json
+  policy_json=$(aws iam get-account-password-policy --output json 2>/dev/null || echo '{}')
+  if [ "$policy_json" = "{}" ]; then
+    echo "No account password policy found or AWS CLI failed to retrieve it." >> "$REPORT_FILE"
+    log_message "No password policy found"
+    send_slack_alert "IAM password policy missing or cannot be retrieved on host."
+    exit 0
+  fi
+
+  local min_len require_sym require_num require_upper require_lower allow_users_change max_age expire_password
+  min_len=$(echo "$policy_json" | jq -r '.PasswordPolicy.MinimumPasswordLength // 0')
+  require_sym=$(echo "$policy_json" | jq -r '.PasswordPolicy.RequireSymbols // false')
+  require_num=$(echo "$policy_json" | jq -r '.PasswordPolicy.RequireNumbers // false')
+  require_upper=$(echo "$policy_json" | jq -r '.PasswordPolicy.RequireUppercaseCharacters // false')
+  require_lower=$(echo "$policy_json" | jq -r '.PasswordPolicy.RequireLowercaseCharacters // false')
+  allow_users_change=$(echo "$policy_json" | jq -r '.PasswordPolicy.AllowUsersToChangePassword // false')
+  max_age=$(echo "$policy_json" | jq -r '.PasswordPolicy.MaxPasswordAge // 0')
+  expire_password=$(echo "$policy_json" | jq -r '.PasswordPolicy.ExpirePasswords // false')
+
+  echo "Password policy summary:" >> "$REPORT_FILE"
+  echo "  Minimum length: $min_len" >> "$REPORT_FILE"
+  echo "  Require symbols: $require_sym" >> "$REPORT_FILE"
+  echo "  Require numbers: $require_num" >> "$REPORT_FILE"
+  echo "  Require uppercase: $require_upper" >> "$REPORT_FILE"
+  echo "  Require lowercase: $require_lower" >> "$REPORT_FILE"
+  echo "  Allow users to change password: $allow_users_change" >> "$REPORT_FILE"
+  echo "  Max password age (days): $max_age" >> "$REPORT_FILE"
+  echo "  Expire passwords: $expire_password" >> "$REPORT_FILE"
+  echo >> "$REPORT_FILE"
+
+  local issues=()
+  if [ "$min_len" -lt 12 ]; then
+    issues+=("MinimumPasswordLength is less than 12 (current=$min_len)")
+  fi
+  if [ "$require_sym" != "true" ]; then
+    issues+=("RequireSymbols is not enabled")
+  fi
+  if [ "$require_num" != "true" ]; then
+    issues+=("RequireNumbers is not enabled")
+  fi
+  if [ "$require_upper" != "true" ]; then
+    issues+=("RequireUppercaseCharacters is not enabled")
+  fi
+  if [ "$require_lower" != "true" ]; then
+    issues+=("RequireLowercaseCharacters is not enabled")
+  fi
+  if [ "$max_age" -eq 0 ]; then
+    issues+=("MaxPasswordAge is not set (passwords do not expire)")
+  elif [ "$max_age" -gt 365 ]; then
+    issues+=("MaxPasswordAge is long (>365 days): $max_age")
+  fi
+
+  if [ ${#issues[@]} -gt 0 ]; then
+    echo "Issues found:" >> "$REPORT_FILE"
+    for it in "${issues[@]}"; do
+      echo "  - $it" >> "$REPORT_FILE"
+    done
+    log_message "Password policy issues detected"
+    send_slack_alert "IAM password policy issues detected. See $REPORT_FILE on host."
+  else
+    echo "No issues detected with account password policy." >> "$REPORT_FILE"
+    log_message "Password policy OK"
+  fi
+}
+
+main "$@"
+#!/usr/bin/env bash
+set -euo pipefail
+
 LOG_FILE="/var/log/aws-iam-password-policy-auditor.log"
 REPORT_FILE="/tmp/iam-password-policy-auditor-$(date +%Y%m%d%H%M%S).txt"
 
