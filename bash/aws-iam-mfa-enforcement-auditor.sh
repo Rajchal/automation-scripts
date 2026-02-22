@@ -26,6 +26,88 @@ Findings:
 EOF
 }
 
+check_user_mfa() {
+  local user="$1"
+  local mfa_count
+  mfa_count=$(aws iam list-mfa-devices --user-name "$user" --query 'length(MFADevices)' --output text 2>/dev/null || echo 0)
+  if [ "$mfa_count" -eq 0 ]; then
+    echo "User: $user - NO MFA devices attached" >> "$REPORT_FILE"
+    return 0
+  fi
+  return 1
+}
+
+check_root_mfa() {
+  # Best-effort: AWS IAM doesn't expose root directly; check account summary flag
+  local enabled
+  enabled=$(aws iam get-account-summary --query 'SummaryMap.AccountMFAEnabled' --output text 2>/dev/null || echo 0)
+  if [ "$enabled" -eq 0 ]; then
+    echo "ROOT ACCOUNT: MFA NOT ENABLED (AccountMFAEnabled == 0)" >> "$REPORT_FILE"
+    return 0
+  fi
+  return 1
+}
+
+main() {
+  write_header
+  log_message "Starting IAM MFA enforcement auditor"
+
+  # Check root
+  if check_root_mfa; then
+    log_message "Root account missing MFA"
+  fi
+
+  # Check IAM users
+  local users
+  users=$(aws iam list-users --query 'Users[].UserName' --output text 2>/dev/null || true)
+  if [ -z "$users" ]; then
+    log_message "No IAM users found or AWS CLI failed"
+  else
+    for u in $users; do
+      if check_user_mfa "$u"; then
+        log_message "User $u missing MFA"
+      fi
+    done
+  fi
+
+  if [ -s "$REPORT_FILE" ]; then
+    log_message "Finished with findings; report saved to $REPORT_FILE"
+    send_slack_alert "IAM MFA auditor found accounts/users without MFA. See $REPORT_FILE on host."
+  else
+    log_message "All checked accounts/users have MFA configured"
+    rm -f "$REPORT_FILE"
+  fi
+}
+
+main "$@"
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_NAME="aws-iam-mfa-enforcement-auditor.sh"
+LOG_FILE="/var/log/${SCRIPT_NAME%.sh}.log"
+REPORT_FILE="/tmp/${SCRIPT_NAME%.sh}-$(date +%s).txt"
+
+log_message() {
+  local msg="$1"
+  echo "$(date -u +'%Y-%m-%dT%H:%M:%SZ') - ${msg}" | tee -a "$LOG_FILE"
+}
+
+send_slack_alert() {
+  local text="$1"
+  if [ -n "${SLACK_WEBHOOK:-}" ]; then
+    jq -n --arg t "$text" '{text:$t}' | curl -s -X POST -H 'Content-type: application/json' --data @- "$SLACK_WEBHOOK" >/dev/null || true
+  fi
+}
+
+write_header() {
+  cat > "$REPORT_FILE" <<EOF
+AWS IAM MFA Enforcement Auditor
+Generated: $(date -u +'%Y-%m-%dT%H:%M:%SZ')
+
+Findings:
+EOF
+}
+
 # Check for MFA devices attached to a user
 user_has_mfa() {
   local user="$1"
