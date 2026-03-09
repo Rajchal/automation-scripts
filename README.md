@@ -65,6 +65,9 @@ Python automation additions focused on Kubernetes, AWS, Docker, Git, and securit
 | `aws-ecr-repository-empty-auditor.py` | Detects empty or stale ECR repositories; optional tagging and safe delete (empty-only) with caps & CI exit. |
 | `aws-s3-unused-bucket-auditor.py` | Flags empty or stale S3 buckets (object count + last modified age); optional tagging & safe empty delete with caps & CI exit. |
 | `k8s-pod-restart-spike-auditor.py` | Detects pods with high container restart counts in recent age window; optional annotation & CI exit. |
+| `k8s-pod-state-auditor.sh` | Audits pods for CrashLoopBackOff/ImagePull errors and high restart counts; supports JSON output and CI exit. |
+| `k8s-service-endpoint-auditor.sh` | Detects selector-based Services that currently have no ready endpoints; supports JSON output and CI exit. |
+| `k8s-node-readiness-auditor.sh` | Reports nodes that are NotReady, unschedulable, or under pressure conditions; supports JSON output and CI exit. |
 
 ### Quick Usage Examples
 
