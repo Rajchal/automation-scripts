@@ -68,6 +68,7 @@ Python automation additions focused on Kubernetes, AWS, Docker, Git, and securit
 | `k8s-pod-state-auditor.sh` | Audits pods for CrashLoopBackOff/ImagePull errors and high restart counts; supports JSON output and CI exit. |
 | `k8s-service-endpoint-auditor.sh` | Detects selector-based Services that currently have no ready endpoints; supports JSON output and CI exit. |
 | `k8s-node-readiness-auditor.sh` | Reports nodes that are NotReady, unschedulable, or under pressure conditions; supports JSON output and CI exit. |
+| `k8s-deployment-health-auditor.sh` | Flags deployments not meeting desired replicas or failing progressing/available conditions; supports JSON output and CI exit. |
 
 ### Quick Usage Examples
 
