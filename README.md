@@ -71,6 +71,7 @@ Python automation additions focused on Kubernetes, AWS, Docker, Git, and securit
 | `k8s-deployment-health-auditor.sh` | Flags deployments not meeting desired replicas or failing progressing/available conditions; supports JSON output and CI exit. |
 | `k8s-daemonset-rollout-auditor.sh` | Flags DaemonSets that are not fully rolled out (ready/updated/available mismatch) or misscheduled; supports JSON output and CI exit. |
 | `k8s-hpa-health-auditor.sh` | Detects HPAs that cannot scale, have inactive scaling, or are scaling-limited based on HPA conditions; supports JSON output and CI exit. |
+| `k8s-job-failure-auditor.sh` | Reports failed Jobs and suspended/unsuccessful CronJobs; supports JSON output and CI exit. |
 
 ### Quick Usage Examples
 
