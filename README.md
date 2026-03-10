@@ -75,6 +75,7 @@ Python automation additions focused on Kubernetes, AWS, Docker, Git, and securit
 | `k8s-statefulset-health-auditor.sh` | Flags StatefulSets with replica readiness/current/update mismatch or observed-generation lag; supports JSON output and CI exit. |
 | `k8s-ingress-backend-auditor.sh` | Detects Ingress backend service references that do not exist in the same namespace; supports JSON output and CI exit. |
 | `k8s-pvc-pending-auditor.sh` | Finds PVCs stuck in Pending with storage/provisioning context; supports JSON output and optional `--no-fail`. |
+| `k8s-networkpolicy-coverage-auditor.sh` | Finds namespaces with active pods but no NetworkPolicy objects; supports JSON output and optional `--no-fail`. |
 
 ### Quick Usage Examples
 
