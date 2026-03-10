@@ -73,6 +73,7 @@ Python automation additions focused on Kubernetes, AWS, Docker, Git, and securit
 | `k8s-hpa-health-auditor.sh` | Detects HPAs that cannot scale, have inactive scaling, or are scaling-limited based on HPA conditions; supports JSON output and CI exit. |
 | `k8s-job-failure-auditor.sh` | Reports failed Jobs and suspended/unsuccessful CronJobs; supports JSON output and CI exit. |
 | `k8s-statefulset-health-auditor.sh` | Flags StatefulSets with replica readiness/current/update mismatch or observed-generation lag; supports JSON output and CI exit. |
+| `k8s-ingress-backend-auditor.sh` | Detects Ingress backend service references that do not exist in the same namespace; supports JSON output and CI exit. |
 
 ### Quick Usage Examples
 
