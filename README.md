@@ -77,6 +77,7 @@ Python automation additions focused on Kubernetes, AWS, Docker, Git, and securit
 | `k8s-pvc-pending-auditor.sh` | Finds PVCs stuck in Pending with storage/provisioning context; supports JSON output and optional `--no-fail`. |
 | `k8s-networkpolicy-coverage-auditor.sh` | Finds namespaces with active pods but no NetworkPolicy objects; supports JSON output and optional `--no-fail`. |
 | `k8s-image-pull-policy-auditor.sh` | Flags workloads using `:latest` images without `imagePullPolicy=Always`; supports JSON output and optional `--no-fail`. |
+| `k8s-service-exposure-auditor.sh` | Flags Services exposed via `LoadBalancer`, `NodePort`, or `externalIPs`; supports JSON output and optional `--no-fail`. |
 
 ### Quick Usage Examples
 
