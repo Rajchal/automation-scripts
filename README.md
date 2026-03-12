@@ -83,6 +83,7 @@ Python automation additions focused on Kubernetes, AWS, Docker, Git, and securit
 | `k8s-hostpath-usage-auditor.sh` | Detects pods using `hostPath` volumes (potential node filesystem exposure); supports JSON output and optional `--no-fail`. |
 | `k8s-serviceaccount-token-mount-auditor.sh` | Flags pods with explicit or implicit service account token automount enabled; supports JSON output and optional `--no-fail`. |
 | `k8s-privileged-container-auditor.sh` | Detects pods running privileged containers/initContainers (`securityContext.privileged=true`); supports JSON output and optional `--no-fail`. |
+| `k8s-linux-capabilities-auditor.sh` | Detects containers/initContainers adding Linux capabilities (`securityContext.capabilities.add`); supports JSON output and optional `--no-fail`. |
 | `k8s-limitrange-coverage-auditor.sh` | Finds namespaces with active pods but no LimitRange objects; supports JSON output and optional `--no-fail`. |
 
 ### Quick Usage Examples
