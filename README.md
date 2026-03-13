@@ -409,6 +409,20 @@ Contributions are welcome! Feel free to submit issues or pull requests to improv
             bash/aws-efs-unused-filesystem-auditor.sh --days 14 --io-threshold 1000000 --conn-threshold 1 --tag --no-dry-run
             ```
 
+        - **`bash/aws-backup-auditor.sh`**: audit AWS Backup vaults, backup plans, and recovery points for aging, encryption gaps, and potentially orphaned recovery points. Outputs a text report and can optionally send a Slack summary.
+
+            Basic example:
+
+            ```bash
+            AWS_REGION=us-east-1 bash/aws-backup-auditor.sh
+            ```
+
+            With custom thresholds and Slack alert:
+
+            ```bash
+            AWS_REGION=us-east-1 RECENT_DAYS_WARN=45 SLACK_WEBHOOK='https://hooks.slack.com/services/xxx/yyy/zzz' bash/aws-backup-auditor.sh
+            ```
+
 
 ## Disclaimer
 
