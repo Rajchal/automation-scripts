@@ -423,6 +423,20 @@ Contributions are welcome! Feel free to submit issues or pull requests to improv
             AWS_REGION=us-east-1 RECENT_DAYS_WARN=45 SLACK_WEBHOOK='https://hooks.slack.com/services/xxx/yyy/zzz' bash/aws-backup-auditor.sh
             ```
 
+        - **`bash/aws-backup-compliance-auditor.sh`**: checks AWS Backup compliance posture across vault encryption, plan coverage, backup job failures, stale backups, and CloudWatch backup/restore metrics. Generates a compliance report and can alert via Slack/email.
+
+            Basic example:
+
+            ```bash
+            AWS_REGION=us-east-1 bash/aws-backup-compliance-auditor.sh
+            ```
+
+            With stricter thresholds and notifications:
+
+            ```bash
+            AWS_REGION=us-east-1 FAILED_JOBS_WARN=2 DAYS_SINCE_SUCCESS_WARN=1 CROSS_REGION_COPY_REQUIRED=true SLACK_WEBHOOK='https://hooks.slack.com/services/xxx/yyy/zzz' EMAIL_TO='ops@example.com' bash/aws-backup-compliance-auditor.sh
+            ```
+
 
 ## Disclaimer
 
