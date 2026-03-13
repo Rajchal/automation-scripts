@@ -437,6 +437,20 @@ Contributions are welcome! Feel free to submit issues or pull requests to improv
             AWS_REGION=us-east-1 FAILED_JOBS_WARN=2 DAYS_SINCE_SUCCESS_WARN=1 CROSS_REGION_COPY_REQUIRED=true SLACK_WEBHOOK='https://hooks.slack.com/services/xxx/yyy/zzz' EMAIL_TO='ops@example.com' bash/aws-backup-compliance-auditor.sh
             ```
 
+        - **`bash/aws-backup-vault-auditor.sh`**: audits backup vault health (recovery-point counts, failed recovery points, vault policies, plan inventory, and retention timeline). Generates a local report and can post a Slack summary.
+
+            Basic example:
+
+            ```bash
+            AWS_REGION=us-east-1 bash/aws-backup-vault-auditor.sh
+            ```
+
+            With stricter minimum recovery points and Slack alert:
+
+            ```bash
+            AWS_REGION=us-east-1 MIN_RECOVERY_POINTS=7 SLACK_WEBHOOK='https://hooks.slack.com/services/xxx/yyy/zzz' bash/aws-backup-vault-auditor.sh
+            ```
+
 
 ## Disclaimer
 
