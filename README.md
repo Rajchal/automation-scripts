@@ -451,6 +451,20 @@ Contributions are welcome! Feel free to submit issues or pull requests to improv
             AWS_REGION=us-east-1 MIN_RECOVERY_POINTS=7 SLACK_WEBHOOK='https://hooks.slack.com/services/xxx/yyy/zzz' bash/aws-backup-vault-auditor.sh
             ```
 
+        - **`bash/aws-rds-backup-auditor.sh`**: audits RDS backup posture for retention period, encryption, public accessibility, and automated snapshot freshness. Writes a report file and can send Slack alerts for risky findings.
+
+            Basic example:
+
+            ```bash
+            AWS_REGION=us-east-1 bash/aws-rds-backup-auditor.sh
+            ```
+
+            With stricter retention requirement and Slack alerting:
+
+            ```bash
+            AWS_REGION=us-east-1 RDS_MIN_RETENTION_DAYS=14 SLACK_WEBHOOK='https://hooks.slack.com/services/xxx/yyy/zzz' bash/aws-rds-backup-auditor.sh
+            ```
+
 
 ## Disclaimer
 
