@@ -87,6 +87,7 @@ Python automation additions focused on Kubernetes, AWS, Docker, Git, and securit
 | `k8s-run-as-root-auditor.sh` | Flags containers that may run as root based on effective `runAsNonRoot`/`runAsUser` security context; supports JSON output and optional `--no-fail`. |
 | `k8s-allow-privilege-escalation-auditor.sh` | Detects containers with `allowPrivilegeEscalation=true` or unset; supports JSON output and optional `--no-fail`. |
 | `k8s-limitrange-coverage-auditor.sh` | Finds namespaces with active pods but no LimitRange objects; supports JSON output and optional `--no-fail`. |
+| `k8s-resourcequota-coverage-auditor.sh` | Finds namespaces with active pods but no ResourceQuota objects; supports JSON output and optional `--no-fail`. |
 
 ### Quick Usage Examples
 
@@ -278,6 +279,20 @@ Contributions are welcome! Feel free to submit issues or pull requests to improv
 
       ```bash
       bash/aws-s3-lifecycle-apply.sh --age-days 365 --transition-days 30 --apply --no-dry-run
+            ```
+
+         - **`bash/k8s-resourcequota-coverage-auditor.sh`**: finds namespaces with active pods but no ResourceQuota; supports JSON output and optional `--no-fail`.
+
+            Basic example:
+
+            ```bash
+            bash/k8s-resourcequota-coverage-auditor.sh
+            ```
+
+            JSON output and non-blocking exit:
+
+            ```bash
+            bash/k8s-resourcequota-coverage-auditor.sh --output json --no-fail
       ```
 
      - **`bash/aws-ec2-idle-instance-auditor.sh`**: find running EC2 instances with low average CPU over a period (uses CloudWatch). Dry-run by default; can stop instances with `--stop --no-dry-run`.
