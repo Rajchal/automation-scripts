@@ -89,6 +89,7 @@ Python automation additions focused on Kubernetes, AWS, Docker, Git, and securit
 | `k8s-limitrange-coverage-auditor.sh` | Finds namespaces with active pods but no LimitRange objects; supports JSON output and optional `--no-fail`. |
 | `k8s-resourcequota-coverage-auditor.sh` | Finds namespaces with active pods but no ResourceQuota objects; supports JSON output and optional `--no-fail`. |
 | `k8s-priorityclass-coverage-auditor.sh` | Finds active pods without explicit `priorityClassName`; supports JSON output and optional `--no-fail`. |
+| `k8s-default-serviceaccount-usage-auditor.sh` | Finds active pods using the default ServiceAccount; supports selector filtering, JSON output, and optional `--no-fail`. |
 
 ### Quick Usage Examples
 
@@ -309,6 +310,26 @@ Contributions are welcome! Feel free to submit issues or pull requests to improv
         ```bash
         bash/k8s-priorityclass-coverage-auditor.sh --output json --no-fail
         ```
+
+         - **`bash/k8s-default-serviceaccount-usage-auditor.sh`**: finds active pods using the default ServiceAccount (explicit or implicit); supports selector filtering, JSON output, and optional `--no-fail`.
+
+          Basic example:
+
+          ```bash
+          bash/k8s-default-serviceaccount-usage-auditor.sh
+          ```
+
+          Namespace + selector example:
+
+          ```bash
+          bash/k8s-default-serviceaccount-usage-auditor.sh --namespace production --selector app=web
+          ```
+
+          JSON output and non-blocking exit:
+
+          ```bash
+          bash/k8s-default-serviceaccount-usage-auditor.sh --output json --no-fail
+          ```
 
      - **`bash/aws-ec2-idle-instance-auditor.sh`**: find running EC2 instances with low average CPU over a period (uses CloudWatch). Dry-run by default; can stop instances with `--stop --no-dry-run`.
 
