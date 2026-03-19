@@ -95,6 +95,7 @@ Python automation additions focused on Kubernetes, AWS, Docker, Git, and securit
 | `k8s-hostpid-usage-auditor.sh` | Detects active pods using `hostPID=true`; supports selector filtering, JSON output, and optional `--no-fail`. |
 | `k8s-hostipc-usage-auditor.sh` | Detects active pods using `hostIPC=true`; supports selector filtering, JSON output, and optional `--no-fail`. |
 | `k8s-hostport-usage-auditor.sh` | Detects active pods exposing `hostPort` mappings; supports selector filtering, JSON output, and optional `--no-fail`. |
+| `k8s-procmount-unmasked-auditor.sh` | Detects containers running with `securityContext.procMount=Unmasked`; supports selector filtering, JSON output, and optional `--no-fail`. |
 
 ### Quick Usage Examples
 
@@ -434,6 +435,26 @@ Contributions are welcome! Feel free to submit issues or pull requests to improv
 
         ```bash
         bash/k8s-hostport-usage-auditor.sh --output json --no-fail
+        ```
+
+        - **`bash/k8s-procmount-unmasked-auditor.sh`**: detects containers using `securityContext.procMount=Unmasked`; supports selector filtering, JSON output, and optional `--no-fail`.
+
+        Basic example:
+
+        ```bash
+        bash/k8s-procmount-unmasked-auditor.sh
+        ```
+
+        Namespace + selector example:
+
+        ```bash
+        bash/k8s-procmount-unmasked-auditor.sh --namespace production --selector app=api
+        ```
+
+        JSON output and non-blocking exit:
+
+        ```bash
+        bash/k8s-procmount-unmasked-auditor.sh --output json --no-fail
         ```
 
      - **`bash/aws-ec2-idle-instance-auditor.sh`**: find running EC2 instances with low average CPU over a period (uses CloudWatch). Dry-run by default; can stop instances with `--stop --no-dry-run`.
