@@ -93,6 +93,7 @@ Python automation additions focused on Kubernetes, AWS, Docker, Git, and securit
 | `k8s-seccomp-profile-auditor.sh` | Detects containers without effective seccomp profile set to `RuntimeDefault` or `Localhost`; supports selector filtering, JSON output, and optional `--no-fail`. |
 | `k8s-hostnetwork-usage-auditor.sh` | Detects active pods using `hostNetwork=true`; supports selector filtering, JSON output, and optional `--no-fail`. |
 | `k8s-hostpid-usage-auditor.sh` | Detects active pods using `hostPID=true`; supports selector filtering, JSON output, and optional `--no-fail`. |
+| `k8s-hostipc-usage-auditor.sh` | Detects active pods using `hostIPC=true`; supports selector filtering, JSON output, and optional `--no-fail`. |
 
 ### Quick Usage Examples
 
@@ -392,6 +393,26 @@ Contributions are welcome! Feel free to submit issues or pull requests to improv
 
         ```bash
         bash/k8s-hostpid-usage-auditor.sh --output json --no-fail
+        ```
+
+        - **`bash/k8s-hostipc-usage-auditor.sh`**: detects active pods using `hostIPC=true`; supports selector filtering, JSON output, and optional `--no-fail`.
+
+        Basic example:
+
+        ```bash
+        bash/k8s-hostipc-usage-auditor.sh
+        ```
+
+        Namespace + selector example:
+
+        ```bash
+        bash/k8s-hostipc-usage-auditor.sh --namespace kube-system --selector k8s-app=calico-node
+        ```
+
+        JSON output and non-blocking exit:
+
+        ```bash
+        bash/k8s-hostipc-usage-auditor.sh --output json --no-fail
         ```
 
      - **`bash/aws-ec2-idle-instance-auditor.sh`**: find running EC2 instances with low average CPU over a period (uses CloudWatch). Dry-run by default; can stop instances with `--stop --no-dry-run`.
