@@ -100,6 +100,7 @@ Python automation additions focused on Kubernetes, AWS, Docker, Git, and securit
 | `k8s-share-process-namespace-auditor.sh` | Detects active pods using `shareProcessNamespace=true`; supports selector filtering, JSON output, and optional `--no-fail`. |
 | `k8s-capabilities-drop-auditor.sh` | Detects containers missing `capabilities.drop=ALL`; supports selector filtering, JSON output, and optional `--no-fail`. |
 | `k8s-sysctl-usage-auditor.sh` | Detects active pods that define sysctls in pod security context; supports selector filtering, JSON output, and optional `--no-fail`. |
+| `k8s-apparmor-profile-auditor.sh` | Detects containers missing compliant AppArmor profiles (`RuntimeDefault`/`Localhost`) via field or legacy annotations; supports selector filtering, JSON output, and optional `--no-fail`. |
 
 ### Quick Usage Examples
 
@@ -539,6 +540,26 @@ Contributions are welcome! Feel free to submit issues or pull requests to improv
 
         ```bash
         bash/k8s-sysctl-usage-auditor.sh --output json --no-fail
+        ```
+
+        - **`bash/k8s-apparmor-profile-auditor.sh`**: detects containers missing compliant AppArmor profiles (`RuntimeDefault`/`Localhost`) using modern fields or legacy annotations; supports selector filtering, JSON output, and optional `--no-fail`.
+
+        Basic example:
+
+        ```bash
+        bash/k8s-apparmor-profile-auditor.sh
+        ```
+
+        Namespace + selector example:
+
+        ```bash
+        bash/k8s-apparmor-profile-auditor.sh --namespace production --selector app=api
+        ```
+
+        JSON output and non-blocking exit:
+
+        ```bash
+        bash/k8s-apparmor-profile-auditor.sh --output json --no-fail
         ```
 
      - **`bash/aws-ec2-idle-instance-auditor.sh`**: find running EC2 instances with low average CPU over a period (uses CloudWatch). Dry-run by default; can stop instances with `--stop --no-dry-run`.
