@@ -97,6 +97,7 @@ Python automation additions focused on Kubernetes, AWS, Docker, Git, and securit
 | `k8s-hostport-usage-auditor.sh` | Detects active pods exposing `hostPort` mappings; supports selector filtering, JSON output, and optional `--no-fail`. |
 | `k8s-procmount-unmasked-auditor.sh` | Detects containers running with `securityContext.procMount=Unmasked`; supports selector filtering, JSON output, and optional `--no-fail`. |
 | `k8s-readonly-rootfs-auditor.sh` | Detects containers where `readOnlyRootFilesystem` is false or unset; supports selector filtering, JSON output, and optional `--no-fail`. |
+| `k8s-share-process-namespace-auditor.sh` | Detects active pods using `shareProcessNamespace=true`; supports selector filtering, JSON output, and optional `--no-fail`. |
 
 ### Quick Usage Examples
 
@@ -476,6 +477,26 @@ Contributions are welcome! Feel free to submit issues or pull requests to improv
 
         ```bash
         bash/k8s-readonly-rootfs-auditor.sh --output json --no-fail
+        ```
+
+        - **`bash/k8s-share-process-namespace-auditor.sh`**: detects active pods using `shareProcessNamespace=true`; supports selector filtering, JSON output, and optional `--no-fail`.
+
+        Basic example:
+
+        ```bash
+        bash/k8s-share-process-namespace-auditor.sh
+        ```
+
+        Namespace + selector example:
+
+        ```bash
+        bash/k8s-share-process-namespace-auditor.sh --namespace kube-system --selector k8s-app=node-exporter
+        ```
+
+        JSON output and non-blocking exit:
+
+        ```bash
+        bash/k8s-share-process-namespace-auditor.sh --output json --no-fail
         ```
 
      - **`bash/aws-ec2-idle-instance-auditor.sh`**: find running EC2 instances with low average CPU over a period (uses CloudWatch). Dry-run by default; can stop instances with `--stop --no-dry-run`.
