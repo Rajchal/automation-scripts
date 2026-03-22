@@ -104,6 +104,7 @@ Python automation additions focused on Kubernetes, AWS, Docker, Git, and securit
 | `k8s-hostaliases-usage-auditor.sh` | Detects active pods that define `spec.hostAliases`; supports selector filtering, JSON output, and optional `--no-fail`. |
 | `k8s-fsgroup-missing-auditor.sh` | Detects active pods where pod-level `securityContext.fsGroup` is not set; supports selector filtering, JSON output, and optional `--no-fail`. |
 | `k8s-supplemental-groups-usage-auditor.sh` | Detects active pods that define pod-level `securityContext.supplementalGroups`; supports selector filtering, JSON output, and optional `--no-fail`. |
+| `k8s-runasuser-auditor.sh` | Detects containers where `securityContext.runAsUser` is unset; supports selector filtering, JSON output, and optional `--no-fail`. |
 
 ### Quick Usage Examples
 
@@ -577,6 +578,20 @@ Contributions are welcome! Feel free to submit issues or pull requests to improv
 
         ```bash
         bash/k8s-hostaliases-usage-auditor.sh --namespace production --selector app=api
+        ```
+
+        - **`bash/k8s-runasuser-auditor.sh`**: detects containers where `securityContext.runAsUser` is unset; supports selector filtering, JSON output, and optional `--no-fail`.
+
+        Basic example:
+
+        ```bash
+        bash/k8s-runasuser-auditor.sh
+        ```
+
+        Namespace + selector example:
+
+        ```bash
+        bash/k8s-runasuser-auditor.sh --namespace production --selector app=api
         ```
 
         JSON output and non-blocking exit:
