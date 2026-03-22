@@ -107,6 +107,7 @@ Python automation additions focused on Kubernetes, AWS, Docker, Git, and securit
 | `k8s-runasuser-auditor.sh` | Detects containers where `securityContext.runAsUser` is unset; supports selector filtering, JSON output, and optional `--no-fail`. |
 | `k8s-runasgroup-missing-auditor.sh` | Detects pods missing pod-level `securityContext.runAsGroup`; supports selector filtering, JSON output, and optional `--no-fail`. |
 | `k8s-pod-affinity-auditor.sh` | Detects workloads missing podAffinity/podAntiAffinity in pod template; supports selector filtering, JSON output, and optional `--no-fail`. |
+| `k8s-probe-missing-auditor.sh` | Detects containers lacking liveness or readiness probes in pod templates; supports selector filtering, JSON output, and optional `--no-fail`. |
 | `k8s-readinessgate-auditor.sh` | Detects workloads using `spec.readinessGates`; supports selector filtering, JSON output, and optional `--no-fail`. |
 
 ### Quick Usage Examples
@@ -615,6 +616,26 @@ Contributions are welcome! Feel free to submit issues or pull requests to improv
 
         ```bash
         bash/k8s-pod-affinity-auditor.sh --namespace production --selector app=api
+        ```
+
+        - **`bash/k8s-probe-missing-auditor.sh`**: detects containers lacking liveness or readiness probes in pod templates; supports selector filtering, JSON output, and optional `--no-fail`.
+
+        Basic example:
+
+        ```bash
+        bash/k8s-probe-missing-auditor.sh
+        ```
+
+        Namespace + selector example:
+
+        ```bash
+        bash/k8s-probe-missing-auditor.sh --namespace production --selector app=api
+        ```
+
+        JSON output and non-blocking exit:
+
+        ```bash
+        bash/k8s-probe-missing-auditor.sh --output json --no-fail
         ```
 
         JSON output and non-blocking exit:
