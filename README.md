@@ -108,6 +108,8 @@ Python automation additions focused on Kubernetes, AWS, Docker, Git, and securit
 | `k8s-runasgroup-missing-auditor.sh` | Detects pods missing pod-level `securityContext.runAsGroup`; supports selector filtering, JSON output, and optional `--no-fail`. |
 | `k8s-pod-affinity-auditor.sh` | Detects workloads missing podAffinity/podAntiAffinity in pod template; supports selector filtering, JSON output, and optional `--no-fail`. |
 | `k8s-probe-missing-auditor.sh` | Detects containers lacking liveness or readiness probes in pod templates; supports selector filtering, JSON output, and optional `--no-fail`. |
+| `k8s-resource-quota-policy-auditor.sh` | Detects containers missing CPU/memory resource requests or limits; supports selector filtering, JSON output, and optional `--no-fail`. |
+| `k8s-probe-missing-auditor.sh` | Detects containers lacking liveness or readiness probes in pod templates; supports selector filtering, JSON output, and optional `--no-fail`. |
 | `k8s-readinessgate-auditor.sh` | Detects workloads using `spec.readinessGates`; supports selector filtering, JSON output, and optional `--no-fail`. |
 
 ### Quick Usage Examples
