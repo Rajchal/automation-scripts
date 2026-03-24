@@ -665,6 +665,42 @@ Contributions are welcome! Feel free to submit issues or pull requests to improv
         bash/k8s-termination-grace-period-auditor.sh --output json --no-fail
         ```
 
+        - **`bash/k8s-ephemeral-storage-auditor.sh`**: detects containers missing ephemeral-storage requests or limits; supports selector filtering, JSON output, and optional `--no-fail`.
+
+        Basic example:
+
+        ```bash
+        bash/k8s-ephemeral-storage-auditor.sh
+        ```
+
+        Namespace + selector example:
+
+        ```bash
+        bash/k8s-ephemeral-storage-auditor.sh --namespace production --selector app=api
+        ```
+
+        JSON output and non-blocking exit:
+
+        ```bash
+        bash/k8s-ephemeral-storage-auditor.sh --output json --no-fail
+        ```
+
+        ```bash
+        bash/k8s-termination-grace-period-auditor.sh
+        ```
+
+        Namespace + selector example:
+
+        ```bash
+        bash/k8s-termination-grace-period-auditor.sh --namespace production --selector app=api
+        ```
+
+        JSON output and non-blocking exit:
+
+        ```bash
+        bash/k8s-termination-grace-period-auditor.sh --output json --no-fail
+        ```
+
         JSON output and non-blocking exit:
 
         ```bash
