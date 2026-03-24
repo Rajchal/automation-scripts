@@ -643,6 +643,26 @@ Contributions are welcome! Feel free to submit issues or pull requests to improv
         bash/k8s-resource-quota-policy-auditor.sh --namespace production --selector app=api
         ```
 
+        - **`bash/k8s-termination-grace-period-auditor.sh`**: detects pods with missing or too-long terminationGracePeriodSeconds; supports threshold, selector filtering, JSON output, and optional `--no-fail`.
+
+        Basic example:
+
+        ```bash
+        bash/k8s-termination-grace-period-auditor.sh
+        ```
+
+        Namespace + selector example:
+
+        ```bash
+        bash/k8s-termination-grace-period-auditor.sh --namespace production --selector app=api
+        ```
+
+        JSON output and non-blocking exit:
+
+        ```bash
+        bash/k8s-termination-grace-period-auditor.sh --output json --no-fail
+        ```
+
         JSON output and non-blocking exit:
 
         ```bash
