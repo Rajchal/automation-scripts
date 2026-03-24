@@ -628,6 +628,26 @@ Contributions are welcome! Feel free to submit issues or pull requests to improv
         bash/k8s-probe-missing-auditor.sh
         ```
 
+        - **`bash/k8s-resource-quota-policy-auditor.sh`**: detects containers missing CPU/memory resource requests or limits; supports selector filtering, JSON output, and optional `--no-fail`.
+
+        Basic example:
+
+        ```bash
+        bash/k8s-resource-quota-policy-auditor.sh
+        ```
+
+        Namespace + selector example:
+
+        ```bash
+        bash/k8s-resource-quota-policy-auditor.sh --namespace production --selector app=api
+        ```
+
+        JSON output and non-blocking exit:
+
+        ```bash
+        bash/k8s-resource-quota-policy-auditor.sh --output json --no-fail
+        ```
+
         Namespace + selector example:
 
         ```bash
