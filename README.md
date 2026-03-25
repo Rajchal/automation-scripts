@@ -107,6 +107,7 @@ Python automation additions focused on Kubernetes, AWS, Docker, Git, and securit
 | `k8s-runasuser-auditor.sh` | Detects containers where `securityContext.runAsUser` is unset; supports selector filtering, JSON output, and optional `--no-fail`. |
 | `k8s-runasgroup-missing-auditor.sh` | Detects pods missing pod-level `securityContext.runAsGroup`; supports selector filtering, JSON output, and optional `--no-fail`. |
 | `k8s-pod-affinity-auditor.sh` | Detects workloads missing podAffinity/podAntiAffinity in pod template; supports selector filtering, JSON output, and optional `--no-fail`. |
+| `k8s-pod-anti-affinity-auditor.sh` | Detects workloads missing podAntiAffinity in pod template; supports selector filtering, JSON output, and optional `--no-fail`. |
 | `k8s-probe-missing-auditor.sh` | Detects containers lacking liveness or readiness probes in pod templates; supports selector filtering, JSON output, and optional `--no-fail`. |
 | `k8s-resource-quota-policy-auditor.sh` | Detects containers missing CPU/memory resource requests or limits; supports selector filtering, JSON output, and optional `--no-fail`. |
 | `k8s-termination-grace-period-auditor.sh` | Detects pods with missing or too-long terminationGracePeriodSeconds; supports threshold, selector filtering, JSON output, and optional `--no-fail`. |
@@ -610,6 +611,7 @@ Contributions are welcome! Feel free to submit issues or pull requests to improv
         ```
 
         - **`bash/k8s-pod-affinity-auditor.sh`**: detects workloads missing podAffinity/podAntiAffinity in pod template; supports selector filtering, JSON output, and optional `--no-fail`.
+        - **`bash/k8s-pod-anti-affinity-auditor.sh`**: detects workloads missing podAntiAffinity in pod template; supports selector filtering, JSON output, and optional `--no-fail`.
 
         Basic example:
 
