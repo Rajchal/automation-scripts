@@ -111,6 +111,7 @@ Python automation additions focused on Kubernetes, AWS, Docker, Git, and securit
 | `k8s-pv-reclaim-policy-auditor.sh` | Detects bound PersistentVolumes with reclaimPolicy=Retain; supports JSON output and optional `--no-fail`. |
 | `k8s-limitrange-policy-auditor.sh` | Detects pods/workloads missing CPU or memory requests/limits for containers/initContainers; supports JSON output and optional `--no-fail`. |
 | `k8s-service-without-selector-auditor.sh` | Detects non-ExternalName Services with no selector; supports JSON output and optional `--no-fail`. |
+| `k8s-resource-request-limit-auditor.sh` | Detects containers with CPU/memory limits lower than requests; supports JSON output and optional `--no-fail`. |
 | `k8s-probe-missing-auditor.sh` | Detects containers lacking liveness or readiness probes in pod templates; supports selector filtering, JSON output, and optional `--no-fail`. |
 | `k8s-resource-quota-policy-auditor.sh` | Detects containers missing CPU/memory resource requests or limits; supports selector filtering, JSON output, and optional `--no-fail`. |
 | `k8s-termination-grace-period-auditor.sh` | Detects pods with missing or too-long terminationGracePeriodSeconds; supports threshold, selector filtering, JSON output, and optional `--no-fail`. |
@@ -618,6 +619,7 @@ Contributions are welcome! Feel free to submit issues or pull requests to improv
         - **`bash/k8s-pv-reclaim-policy-auditor.sh`**: detects bound PersistentVolumes with reclaimPolicy=Retain; supports JSON output and optional `--no-fail`.
         - **`bash/k8s-limitrange-policy-auditor.sh`**: detects pods/workloads missing CPU/memory requests or limits; supports JSON output and optional `--no-fail`.
         - **`bash/k8s-service-without-selector-auditor.sh`**: detects non-ExternalName Services with no selector; supports JSON output and optional `--no-fail`.
+        - **`bash/k8s-resource-request-limit-auditor.sh`**: detects containers with CPU/memory limits lower than requests; supports JSON output and optional `--no-fail`.
 
         Basic example:
 
