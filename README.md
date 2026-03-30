@@ -114,6 +114,7 @@ Python automation additions focused on Kubernetes, AWS, Docker, Git, and securit
 | `k8s-cronjob-concurrency-policy-auditor.sh` | Detects CronJobs missing or using non-Forbid concurrencyPolicy; supports JSON output and optional `--no-fail`. |
 | `k8s-resource-request-limit-auditor.sh` | Detects containers with CPU/memory limits lower than requests; supports JSON output and optional `--no-fail`. |
 | `k8s-nonterminating-pod-auditor.sh` | Detects pods stuck pending/containerCreating for too long (>threshold); supports JSON output and optional `--no-fail`. |
+| `k8s-single-replica-workload-auditor.sh` | Detects deployments/statefulsets/replicasets with replica count <=1; supports JSON output and optional `--no-fail`. |
 | `k8s-image-pull-secret-auditor.sh` | Detects pods without spec.imagePullSecrets; supports JSON output and optional `--no-fail`. |
 | `k8s-node-affinity-auditor.sh` | Detects workloads lacking nodeSelector and nodeAffinity; supports JSON output and optional `--no-fail`. |
 | `k8s-emptydir-usage-auditor.sh` | Detects pods using emptyDir or hostPath volumes; supports JSON output and optional `--no-fail`. |
