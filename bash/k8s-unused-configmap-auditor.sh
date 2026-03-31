@@ -70,8 +70,7 @@ used_cm_keys="$(jq -r '
 if [[ -z "$used_cm_keys" ]]; then
   used_cm_keys_json="[]"
 else
-  used_cm_keys_json="$(printf '%s
-' "$used_cm_keys" | jq -R . | jq -s .)"
+  used_cm_keys_json="$(printf '%s\n' "$used_cm_keys" | jq -R . | jq -s .)"
 fi
 
 findings="$(jq -c --argjson used "$used_cm_keys_json" '
