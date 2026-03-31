@@ -87,7 +87,7 @@ else
     echo "No unused ConfigMaps detected."
   else
     echo "Unused ConfigMaps (count=$count):"
-    jq -r '.unused_configmaps[] | "- \(.namespace)/\(.name)"' <<< "$result"
+    jq -r '.unused_configmaps[] | "- " + .namespace + "/" + .name' <<< "$result"
   fi
 fi
 
