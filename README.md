@@ -117,6 +117,7 @@ Python automation additions focused on Kubernetes, AWS, Docker, Git, and securit
 | `k8s-single-replica-workload-auditor.sh` | Detects deployments/statefulsets/replicasets with replica count <=1; supports JSON output and optional `--no-fail`. |
 | `k8s-image-pull-secret-auditor.sh` | Detects pods without spec.imagePullSecrets; supports JSON output and optional `--no-fail`. |
 | `k8s-node-affinity-auditor.sh` | Detects workloads lacking nodeSelector and nodeAffinity; supports JSON output and optional `--no-fail`. |
+| `k8s-unused-configmap-auditor.sh` | Detects ConfigMaps not referenced by any pod; supports JSON output and optional `--no-fail`. |
 | `k8s-emptydir-usage-auditor.sh` | Detects pods using emptyDir or hostPath volumes; supports JSON output and optional `--no-fail`. |
 | `k8s-image-digest-auditor.sh` | Detects containers using image tags instead of digest pinning; supports JSON output and optional `--no-fail`. |
 | `k8s-unused-serviceaccount-auditor.sh` | Detects ServiceAccounts not referenced by any running Pods; supports JSON output and optional `--no-fail`. |
