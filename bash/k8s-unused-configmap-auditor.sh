@@ -73,9 +73,13 @@ else
   used_cm_keys_json="$(printf '%s\n' "$used_cm_keys" | jq -R . | jq -s .)"
 fi
 
-findings="[]"
+findings_json="$(jq -c '
+  .items[]?
+  | {namespace:.metadata.namespace, name:.metadata.name}
+  | select((.namespace + "/" + .name) as $k | ($used | index($k) | not))
+' --argjson used "$used_cm_keys_json" <<< "$cms_json" | jq -s '.')"
 
-result="$(jq -n --argjson findings "[$findings]" '{unused_configmaps:$findings}')"
+result="$(jq -n --argjson findings "$findings_json" '{unused_configmaps:$findings}')"
 count="$(jq '.unused_configmaps | length' <<< "$result")"
 
 if [[ "$OUTPUT" == "json" ]]; then
