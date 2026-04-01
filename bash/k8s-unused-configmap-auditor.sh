@@ -59,13 +59,11 @@ done
 cms_json="$(kubectl get configmap --all-namespaces -o json 2>/dev/null || echo '{"items":[]}')"
 pods_json="$(kubectl get pods --all-namespaces -o json 2>/dev/null || echo '{"items":[]}')"
 
-used_cm_keys="$(jq -r '
-  .items[]?
-  | .metadata.namespace as $ns
-  | .spec.volumes[]? | select(.configMap != null) | "\($ns)/\(.configMap.name)"
-  , .spec.containers[]? | .envFrom[]? | select(.configMapRef != null) | "\($ns)/\(.configMapRef.name)"
-  , .spec.initContainers[]? | .envFrom[]? | select(.configMapRef != null) | "\($ns)/\(.configMapRef.name)"
-' <<< "$pods_json" | sort -u)
+used_cm_keys="$(jq -r '.items[]? as $pod
+  | $pod.metadata.namespace as $ns
+  | (($pod.spec.volumes // [])[]? | select(.configMap != null) | "\($ns)/\(.configMap.name)"),
+    (($pod.spec.containers // [])[]? | (.envFrom // [])[]? | select(.configMapRef != null) | "\($ns)/\(.configMapRef.name)"),
+    (($pod.spec.initContainers // [])[]? | (.envFrom // [])[]? | select(.configMapRef != null) | "\($ns)/\(.configMapRef.name)")' <<< "$pods_json" | sort -u)"
 
 if [[ -z "$used_cm_keys" ]]; then
   used_cm_keys_json="[]"
@@ -73,11 +71,9 @@ else
   used_cm_keys_json="$(printf '%s\n' "$used_cm_keys" | jq -R . | jq -s .)"
 fi
 
-findings_json="$(jq -c '
-  .items[]?
+findings_json="$(jq -c --argjson used "$used_cm_keys_json" '.items[]?
   | {namespace:.metadata.namespace, name:.metadata.name}
-  | select((.namespace + "/" + .name) as $k | ($used | index($k) | not))
-' --argjson used "$used_cm_keys_json" <<< "$cms_json" | jq -s '.')"
+  | select((.namespace + "/" + .name) as $k | ($used | index($k) | not))' <<< "$cms_json" | jq -s '.')"
 
 result="$(jq -n --argjson findings "$findings_json" '{unused_configmaps:$findings}')"
 count="$(jq '.unused_configmaps | length' <<< "$result")"
