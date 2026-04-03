@@ -119,6 +119,7 @@ Python automation additions focused on Kubernetes, AWS, Docker, Git, and securit
 | `k8s-node-affinity-auditor.sh` | Detects workloads lacking nodeSelector and nodeAffinity; supports JSON output and optional `--no-fail`. |
 | `k8s-topology-spread-constraints-auditor.sh` | Detects workloads missing topologySpreadConstraints; supports JSON output and optional `--no-fail`. |
 | `k8s-toleration-auditor.sh` | Detects workloads without tolerations; supports JSON output and optional `--no-fail`. |
+| `k8s-workload-labels-auditor.sh` | Detects workloads missing app.kubernetes.io/name or app.kubernetes.io/instance labels; supports JSON output and optional `--no-fail`. |
 | `k8s-unused-configmap-auditor.sh` | Detects ConfigMaps not referenced by any pod; supports JSON output and optional `--no-fail`. |
 | `k8s-emptydir-usage-auditor.sh` | Detects pods using emptyDir or hostPath volumes; supports JSON output and optional `--no-fail`. |
 | `k8s-image-digest-auditor.sh` | Detects containers using image tags instead of digest pinning; supports JSON output and optional `--no-fail`. |
@@ -641,6 +642,7 @@ Contributions are welcome! Feel free to submit issues or pull requests to improv
         - **`bash/k8s-node-affinity-auditor.sh`**: detects workloads lacking nodeSelector and nodeAffinity; supports JSON output and optional `--no-fail`.
         - **`bash/k8s-topology-spread-constraints-auditor.sh`**: detects workloads missing topologySpreadConstraints; supports JSON output and optional `--no-fail`.
         - **`bash/k8s-toleration-auditor.sh`**: detects workloads without tolerations; supports JSON output and optional `--no-fail`.
+        - **`bash/k8s-workload-labels-auditor.sh`**: detects workloads missing app.kubernetes.io/name or app.kubernetes.io/instance labels; supports JSON output and optional `--no-fail`.
 
         Basic example:
 
