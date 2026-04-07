@@ -637,6 +637,7 @@ Contributions are welcome! Feel free to submit issues or pull requests to improv
         - **`bash/k8s-emptydir-usage-auditor.sh`**: detects pods using emptyDir or hostPath volumes; supports JSON output and optional `--no-fail`.
         - **`bash/k8s-image-digest-auditor.sh`**: detects containers using image tags instead of digest pinning; supports JSON output and optional `--no-fail`.
         - **`bash/k8s-image-pull-secret-auditor.sh`**: detects pods without spec.imagePullSecrets; supports JSON output and optional `--no-fail`.
+        - **`bash/k8s-secret-mount-auditor.sh`**: detects pods mounting secrets as volumes or via envFrom; supports JSON output and optional `--no-fail`.
         - **`bash/k8s-unused-serviceaccount-auditor.sh`**: detects ServiceAccounts not referenced by any running Pods; supports JSON output and optional `--no-fail`.
         - **`bash/k8s-unused-configmap-auditor.sh`**: detects ConfigMaps not referenced by any pod; supports JSON output and optional `--no-fail`.
         - **`bash/k8s-nonterminating-pod-auditor.sh`**: detects pods stuck pending/containerCreating for too long; supports JSON output and optional `--no-fail`.
