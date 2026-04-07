@@ -116,6 +116,7 @@ Python automation additions focused on Kubernetes, AWS, Docker, Git, and securit
 | `k8s-nonterminating-pod-auditor.sh` | Detects pods stuck pending/containerCreating for too long (>threshold); supports JSON output and optional `--no-fail`. |
 | `k8s-single-replica-workload-auditor.sh` | Detects deployments/statefulsets/replicasets with replica count <=1; supports JSON output and optional `--no-fail`. |
 | `k8s-image-pull-secret-auditor.sh` | Detects pods without spec.imagePullSecrets; supports JSON output and optional `--no-fail`. |
+| `k8s-secret-mount-auditor.sh` | Detects pods mounting secrets as volumes or via envFrom; supports JSON output and optional `--no-fail`. |
 | `k8s-node-affinity-auditor.sh` | Detects workloads lacking nodeSelector and nodeAffinity; supports JSON output and optional `--no-fail`. |
 | `k8s-topology-spread-constraints-auditor.sh` | Detects workloads missing topologySpreadConstraints; supports JSON output and optional `--no-fail`. |
 | `k8s-toleration-auditor.sh` | Detects workloads without tolerations; supports JSON output and optional `--no-fail`. |
