@@ -644,6 +644,7 @@ Contributions are welcome! Feel free to submit issues or pull requests to improv
         - **`bash/k8s-image-registry-auditor.sh`**: detects container images from registries outside approved prefixes; supports JSON output and optional `--no-fail`.
         - **`bash/k8s-image-pull-secret-auditor.sh`**: detects pods without spec.imagePullSecrets; supports JSON output and optional `--no-fail`.
         - **`bash/k8s-secret-mount-auditor.sh`**: detects pods mounting secrets as volumes or via envFrom; supports JSON output and optional `--no-fail`.
+        - **`bash/k8s-unused-secret-auditor.sh`**: detects Secrets not referenced by any pod; supports JSON output and optional `--no-fail`.
         - **`bash/k8s-namespace-label-auditor.sh`**: detects namespaces missing required labels like environment and owner; supports JSON output and optional `--no-fail`.
         - **`bash/k8s-unused-serviceaccount-auditor.sh`**: detects ServiceAccounts not referenced by any running Pods; supports JSON output and optional `--no-fail`.
         - **`bash/k8s-unused-configmap-auditor.sh`**: detects ConfigMaps not referenced by any pod; supports JSON output and optional `--no-fail`.
