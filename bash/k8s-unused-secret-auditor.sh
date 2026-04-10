@@ -71,8 +71,7 @@ used_secrets="$(jq -r '
 if [[ -z "$used_secrets" ]]; then
   used_secrets_json="[]"
 else
-  used_secrets_json="$(printf '%s
-' "$used_secrets" | jq -R . | jq -s .)"
+  used_secrets_json="$(printf '%s\n' "$used_secrets" | jq -R . | jq -s .)"
 fi
 
 findings="$(jq -c --argjson used "$used_secrets_json" '
