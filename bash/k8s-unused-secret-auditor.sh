@@ -63,9 +63,11 @@ pods_json="$(kubectl get pods --all-namespaces -o json 2>/dev/null || echo '{"it
 used_secrets="$(jq -r '
   .items[]?
   | .metadata.namespace as $ns
-  | ((.spec.volumes // [])[]? | select(.secret != null) | "\($ns)/\(.secret.secretName)"),
-    ((.spec.containers // [])[]? | (.envFrom // [])[]? | select(.secretRef != null) | "\($ns)/\(.secretRef.name)"),
-    ((.spec.initContainers // [])[]? | (.envFrom // [])[]? | select(.secretRef != null) | "\($ns)/\(.secretRef.name)")
+  | [
+      (.spec.volumes // [] | map(select(.secret != null) | "\($ns)/\(.secret.secretName)")[]?),
+      (.spec.containers // [] | map(.envFrom // [] | select(.secretRef != null) | "\($ns)/\(.secretRef.name)")[]?),
+      (.spec.initContainers // [] | map(.envFrom // [] | select(.secretRef != null) | "\($ns)/\(.secretRef.name)")[]?)
+    ][]?
 ' <<< "$pods_json" | sort -u)
 
 if [[ -z "$used_secrets" ]]; then
