@@ -121,6 +121,7 @@ Python automation additions focused on Kubernetes, AWS, Docker, Git, and securit
 | `k8s-ingress-tls-auditor.sh` | Detects Ingress resources missing TLS configuration; supports JSON output and optional `--no-fail`. |
 | `k8s-secret-mount-auditor.sh` | Detects pods mounting secrets as volumes or via envFrom; supports JSON output and optional `--no-fail`. |
 | `k8s-unused-secret-auditor.sh` | Detects Secrets not referenced by any pod; supports JSON output and optional `--no-fail`. |
+| `k8s-pvc-storageclass-auditor.sh` | Detects PVCs missing storageClassName; supports JSON output and optional `--no-fail`. |
 | `k8s-namespace-label-auditor.sh` | Detects namespaces missing required labels like environment and owner; supports JSON output and optional `--no-fail`. |
 | `k8s-node-affinity-auditor.sh` | Detects workloads lacking nodeSelector and nodeAffinity; supports JSON output and optional `--no-fail`. |
 | `k8s-topology-spread-constraints-auditor.sh` | Detects workloads missing topologySpreadConstraints; supports JSON output and optional `--no-fail`. |
@@ -646,6 +647,7 @@ Contributions are welcome! Feel free to submit issues or pull requests to improv
         - **`bash/k8s-image-pull-secret-auditor.sh`**: detects pods without spec.imagePullSecrets; supports JSON output and optional `--no-fail`.
         - **`bash/k8s-secret-mount-auditor.sh`**: detects pods mounting secrets as volumes or via envFrom; supports JSON output and optional `--no-fail`.
         - **`bash/k8s-unused-secret-auditor.sh`**: detects Secrets not referenced by any pod; supports JSON output and optional `--no-fail`.
+        - **`bash/k8s-pvc-storageclass-auditor.sh`**: detects PVCs missing storageClassName; supports JSON output and optional `--no-fail`.
         - **`bash/k8s-namespace-label-auditor.sh`**: detects namespaces missing required labels like environment and owner; supports JSON output and optional `--no-fail`.
         - **`bash/k8s-unused-serviceaccount-auditor.sh`**: detects ServiceAccounts not referenced by any running Pods; supports JSON output and optional `--no-fail`.
         - **`bash/k8s-unused-configmap-auditor.sh`**: detects ConfigMaps not referenced by any pod; supports JSON output and optional `--no-fail`.
