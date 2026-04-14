@@ -66,7 +66,7 @@ used_secrets="$(jq -r '
   | (.spec.volumes // [])[]? | select(.secret != null) | "\($ns)/\(.secret.secretName)"
   , (.spec.containers // [])[]? | (.envFrom // [])[]? | select(.secretRef != null) | "\($ns)/\(.secretRef.name)"
   , (.spec.initContainers // [])[]? | (.envFrom // [])[]? | select(.secretRef != null) | "\($ns)/\(.secretRef.name)"
-' <<< "$pods_json" | sort -u)
+' <<< "$pods_json" | sort -u)"
 
 if [[ -z "$used_secrets" ]]; then
   used_secrets_json="[]"
