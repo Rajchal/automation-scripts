@@ -120,6 +120,7 @@ Python automation additions focused on Kubernetes, AWS, Docker, Git, and securit
 | `k8s-image-registry-auditor.sh` | Detects container images from registries outside approved prefixes; supports JSON output and optional `--no-fail`. |
 | `k8s-ingress-tls-auditor.sh` | Detects Ingress resources missing TLS configuration; supports JSON output and optional `--no-fail`. |
 | `k8s-secret-mount-auditor.sh` | Detects pods mounting secrets as volumes or via envFrom; supports JSON output and optional `--no-fail`. |
+| `k8s-configmap-mount-auditor.sh` | Detects pods mounting ConfigMaps as volumes or via envFrom; supports JSON output and optional `--no-fail`. |
 | `k8s-unused-secret-auditor.sh` | Detects Secrets not referenced by any pod; supports JSON output and optional `--no-fail`. |
 | `k8s-pvc-storageclass-auditor.sh` | Detects PVCs missing storageClassName; supports JSON output and optional `--no-fail`. |
 | `k8s-namespace-label-auditor.sh` | Detects namespaces missing required labels like environment and owner; supports JSON output and optional `--no-fail`. |
@@ -646,6 +647,7 @@ Contributions are welcome! Feel free to submit issues or pull requests to improv
         - **`bash/k8s-image-registry-auditor.sh`**: detects container images from registries outside approved prefixes; supports JSON output and optional `--no-fail`.
         - **`bash/k8s-image-pull-secret-auditor.sh`**: detects pods without spec.imagePullSecrets; supports JSON output and optional `--no-fail`.
         - **`bash/k8s-secret-mount-auditor.sh`**: detects pods mounting secrets as volumes or via envFrom; supports JSON output and optional `--no-fail`.
+        - **`bash/k8s-configmap-mount-auditor.sh`**: detects pods mounting ConfigMaps as volumes or via envFrom; supports JSON output and optional `--no-fail`.
         - **`bash/k8s-unused-secret-auditor.sh`**: detects Secrets not referenced by any pod; supports JSON output and optional `--no-fail`.
         - **`bash/k8s-pvc-storageclass-auditor.sh`**: detects PVCs missing storageClassName; supports JSON output and optional `--no-fail`.
         - **`bash/k8s-namespace-label-auditor.sh`**: detects namespaces missing required labels like environment and owner; supports JSON output and optional `--no-fail`.
