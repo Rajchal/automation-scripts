@@ -648,6 +648,8 @@ Contributions are welcome! Feel free to submit issues or pull requests to improv
         - **`bash/k8s-image-digest-auditor.sh`**: detects containers using image tags instead of digest pinning; supports JSON output and optional `--no-fail`.
         - **`bash/k8s-image-registry-auditor.sh`**: detects container images from registries outside approved prefixes; supports JSON output and optional `--no-fail`.
         - **`bash/k8s-ingress-tls-auditor.sh`**: detects Ingress resources missing TLS configuration; supports JSON output and optional `--no-fail`.
+        - **`bash/k8s-networkpolicy-egress-auditor.sh`**: detects NetworkPolicies with ingress but no egress rules; supports JSON output and optional `--no-fail`.
+        - **`bash/k8s-startup-probe-missing-auditor.sh`**: detects containers missing startupProbe in pod templates; supports JSON output and optional `--no-fail`.
         - **`bash/k8s-image-pull-secret-auditor.sh`**: detects pods without spec.imagePullSecrets; supports JSON output and optional `--no-fail`.
         - **`bash/k8s-secret-mount-auditor.sh`**: detects pods mounting secrets as volumes or via envFrom; supports JSON output and optional `--no-fail`.
         - **`bash/k8s-configmap-mount-auditor.sh`**: detects pods mounting ConfigMaps as volumes or via envFrom; supports JSON output and optional `--no-fail`.
