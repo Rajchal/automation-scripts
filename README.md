@@ -113,6 +113,7 @@ Python automation additions focused on Kubernetes, AWS, Docker, Git, and securit
 | `k8s-pv-reclaim-policy-auditor.sh` | Detects bound PersistentVolumes with reclaimPolicy=Retain; supports JSON output and optional `--no-fail`. |
 | `k8s-limitrange-policy-auditor.sh` | Detects pods/workloads missing CPU or memory requests/limits for containers/initContainers; supports JSON output and optional `--no-fail`. |
 | `k8s-service-without-selector-auditor.sh` | Detects non-ExternalName Services with no selector; supports JSON output and optional `--no-fail`. |
+| `k8s-service-externalname-auditor.sh` | Detects Services configured as ExternalName; supports JSON output and optional `--no-fail`. |
 | `k8s-cronjob-concurrency-policy-auditor.sh` | Detects CronJobs missing or using non-Forbid concurrencyPolicy; supports JSON output and optional `--no-fail`. |
 | `k8s-cronjob-history-limit-auditor.sh` | Detects CronJobs with missing or low successful/failed history limits; supports JSON output and optional `--no-fail`. |
 | `k8s-resource-request-limit-auditor.sh` | Detects containers with CPU/memory limits lower than requests; supports JSON output and optional `--no-fail`. |
@@ -643,6 +644,7 @@ Contributions are welcome! Feel free to submit issues or pull requests to improv
         - **`bash/k8s-pv-reclaim-policy-auditor.sh`**: detects bound PersistentVolumes with reclaimPolicy=Retain; supports JSON output and optional `--no-fail`.
         - **`bash/k8s-limitrange-policy-auditor.sh`**: detects pods/workloads missing CPU/memory requests or limits; supports JSON output and optional `--no-fail`.
         - **`bash/k8s-service-without-selector-auditor.sh`**: detects non-ExternalName Services with no selector; supports JSON output and optional `--no-fail`.
+        - **`bash/k8s-service-externalname-auditor.sh`**: detects Services configured as ExternalName; supports JSON output and optional `--no-fail`.
         - **`bash/k8s-cronjob-concurrency-policy-auditor.sh`**: detects CronJobs missing or using non-Forbid concurrencyPolicy; supports JSON output and optional `--no-fail`.
         - **`bash/k8s-cronjob-history-limit-auditor.sh`**: detects CronJobs with missing or low successful/failed history limits; supports JSON output and optional `--no-fail`.
         - **`bash/k8s-resource-request-limit-auditor.sh`**: detects containers with CPU/memory limits lower than requests; supports JSON output and optional `--no-fail`.
