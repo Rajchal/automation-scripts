@@ -1057,6 +1057,20 @@ Contributions are welcome! Feel free to submit issues or pull requests to improv
             AWS_REGION=us-east-1 RDS_MIN_RETENTION_DAYS=14 SLACK_WEBHOOK='https://hooks.slack.com/services/xxx/yyy/zzz' bash/aws-rds-backup-auditor.sh
             ```
 
+        - **`bash/aws-rds-snapshot-rotate.sh`**: create a manual DB snapshot for an RDS instance and rotate old manual snapshots by prefix, keeping only the newest N snapshots. Uses CLI flags for instance, retention, prefix, and region.
+
+            Basic example (create snapshot and keep default 7):
+
+            ```bash
+            bash/aws-rds-snapshot-rotate.sh --instance-id mydb
+            ```
+
+            Keep 14 snapshots with custom prefix and region:
+
+            ```bash
+            bash/aws-rds-snapshot-rotate.sh --instance-id mydb --retention 14 --prefix prod --region us-east-1
+            ```
+
 
 ## Disclaimer
 
